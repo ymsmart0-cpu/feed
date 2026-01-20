@@ -108,11 +108,12 @@ def get_article_image(entry):
     return match.group(1) if match else None
 
 # ============================
-# رسم النص
+# رسم النص (RTL صحيح)
 # ============================
 def wrap_text_rtl(text, draw, font, max_width):
     reshaped = arabic_reshaper.reshape(text)
     bidi_text = get_display(reshaped)
+
     words = bidi_text.split(" ")
     lines, current = [], ""
 
@@ -127,6 +128,7 @@ def wrap_text_rtl(text, draw, font, max_width):
 
     if current:
         lines.append(current)
+
     return lines
 
 def fit_text_to_box(text, draw, font_path, max_width, max_height):
@@ -207,7 +209,7 @@ def main():
         )
 
         y = TOP_Y
-        for line in reversed(lines):
+        for line in lines:   # ❗ بدون reversed
             w, h2 = draw.textbbox((0, 0), line, font=font)[2:]
             x = LEFT_X + (MAX_WIDTH - w) // 2
             draw.text((x, y), line, font=font, fill="black")
