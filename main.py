@@ -6,12 +6,12 @@ import os
 import re
 from io import BytesIO
 from datetime import datetime
-import random
-import subprocess
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import arabic_reshaper
 from bidi.algorithm import get_display
+import random
+import subprocess
 
 # ============================
 # إعدادات عامة
@@ -33,12 +33,12 @@ LEFT_X = 110
 RIGHT_X = 960
 TOP_Y = 725
 BOTTOM_Y = 885
-PADDING = 6
+PADDING = 5
 MAX_WIDTH = RIGHT_X - LEFT_X
 MAX_HEIGHT = BOTTOM_Y - TOP_Y
 
 # ============================
-# فيسبوك (Secrets)
+# فيسبوك (من Secrets)
 # ============================
 PAGE_ID = os.getenv("PAGE_ID")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
@@ -108,16 +108,13 @@ def get_article_image(entry):
     return match.group(1) if match else None
 
 # ============================
-# رسم النص RTL
+# دوال تنسيق ورسم النصوص (المضافة)
 # ============================
 def wrap_text_rtl(text, draw, font, max_width):
     reshaped = arabic_reshaper.reshape(text)
     bidi_text = get_display(reshaped)
-
     words = bidi_text.split(" ")
-    lines = []
-    current = ""
-
+    lines, current = [], ""
     for word in words:
         test = word if not current else current + " " + word
         w = draw.textbbox((0, 0), test, font=font)[2]
@@ -126,26 +123,34 @@ def wrap_text_rtl(text, draw, font, max_width):
         else:
             lines.append(current)
             current = word
-
     if current:
         lines.append(current)
-
     return lines
 
 def fit_text_to_box(text, draw, font_path, max_width, max_height):
     size = START_FONT_SIZE
-    while size >= 14:
+    font = ImageFont.truetype(font_path, size)
+    while size >= 12:
         font = ImageFont.truetype(font_path, size)
         lines = wrap_text_rtl(text, draw, font, max_width)
-        total_height = sum(
-            draw.textbbox((0, 0), l, font=font)[3] for l in lines
-        ) + PADDING * len(lines)
-
-        if total_height <= max_height:
+        # حساب الارتفاع الكلي للأسطر
+        height = sum(draw.textbbox((0, 0), l, font=font)[3] for l in lines) + (len(lines) * PADDING)
+        if height <= max_height:
             return font, lines
         size -= 1
-
     return font, lines
+
+def draw_text_box(draw, lines, font):
+    # حساب الارتفاع الكلي للبدء من المنتصف أو من الأعلى
+    total_h = sum(draw.textbbox((0, 0), l, font=font)[3] for l in lines) + (len(lines) * PADDING)
+    current_y = TOP_Y + (MAX_HEIGHT - total_h) // 2  # لتوسيط النص عمودياً داخل الصندوق
+    
+    for line in lines:
+        w = draw.textbbox((0, 0), line, font=font)[2]
+        h = draw.textbbox((0, 0), line, font=font)[3]
+        x = LEFT_X + (MAX_WIDTH - w) // 2
+        draw.text((x, current_y), line, font=font, fill="black")
+        current_y += h + PADDING
 
 # ============================
 # نشر فيسبوك
@@ -163,7 +168,6 @@ def post_to_facebook(image_path, title, article, url):
             data={"access_token": PAGE_ACCESS_TOKEN, "caption": caption},
             files={"source": img}
         )
-
     return r.status_code == 200
 
 # ============================
@@ -171,8 +175,8 @@ def post_to_facebook(image_path, title, article, url):
 # ============================
 def main():
     now = datetime.now()
-    if 1 < now.hour < 8:
-        print("⏭ خارج وقت النشر")
+    if now.hour < 8 and now.hour > 1:
+        print("⏭ خارج وقت النشر (من 1 ص إلى 8 ص)")
         return
 
     feed = feedparser.parse(RSS_URL)
@@ -186,7 +190,13 @@ def main():
         if h in posted:
             continue
 
-        bg = Image.open(BG_PATH).convert("RGBA").resize((IMAGE_WIDTH, IMAGE_HEIGHT))
+        # إنشاء الصورة
+        try:
+            bg = Image.open(BG_PATH).convert("RGBA").resize((IMAGE_WIDTH, IMAGE_HEIGHT))
+        except:
+            print("❌ خطأ: لم يتم العثور على ملف الخلفية BG.png")
+            return
+
         img_url = get_article_image(entry)
 
         try:
@@ -200,26 +210,11 @@ def main():
         bg.paste(article_img, (base_x, ARTICLE_IMG_Y), article_img)
 
         draw = ImageDraw.Draw(bg)
-        font, lines = fit_text_to_box(
-            process_sensitive_text(title),
-            draw,
-            FONT_FILE,
-            MAX_WIDTH,
-            MAX_HEIGHT
-        )
-
-        y = TOP_Y
-        for line in lines:
-            w, h2 = draw.textbbox((0, 0), line, font=font)[2:]
-            x = LEFT_X + (MAX_WIDTH - w) // 2
-            draw.text(
-                (x, y),
-                line,
-                font=font,
-                fill="black",
-                direction="rtl"   # 👈 RTL حقيقي
-            )
-            y += h2 + PADDING
+        
+        # معالجة النصوص واستدعاء الدوال المضافة
+        processed_title = process_sensitive_text(title)
+        font, lines = fit_text_to_box(processed_title, draw, FONT_FILE, MAX_WIDTH, MAX_HEIGHT)
+        draw_text_box(draw, lines, font)
 
         output = f"output_{h}.png"
         bg.save(output)
@@ -227,8 +222,12 @@ def main():
         if post_to_facebook(output, title, text, entry.link):
             save_posted(h)
             git_commit()
-            print("✅ تم النشر")
+            print(f"✅ تم النشر بنجاح: {title[:40]}...")
+            if os.path.exists(output):
+                os.remove(output)
             break
+        else:
+            print("❌ فشل النشر على فيسبوك")
 
 # ============================
 if __name__ == "__main__":
