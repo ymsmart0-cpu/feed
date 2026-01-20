@@ -1,0 +1,5 @@
+feedparser
+requests
+Pillow
+arabic-reshaper
+python-bidi
