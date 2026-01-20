@@ -1,17 +1,17 @@
-name: Auto Facebook News (HTML Engine)
+name: News Bot with Wand Engine
 
-# الصلاحيات اللازمة لتحديث ملف السجل (posted_articles.txt)
+# السماح للبوت بتحديث ملف السجل في المستودع
 permissions:
   contents: write
 
 on:
   schedule:
-    # يعمل كل 30 دقيقة من الساعة 8 صباحاً حتى منتصف الليل بتوقيت جرينتش
-    - cron: "*/30 8-23 * * *"
+    # يعمل كل 30 دقيقة (يمكنك تعديله حسب رغبتك)
+    - cron: "*/30 * * * *"
   workflow_dispatch: # للسماح بتشغيل البوت يدوياً للتجربة
 
 jobs:
-  build_and_run:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,30 +23,30 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install System Dependencies (Chrome & Fonts)
+      - name: Install System Dependencies (ImageMagick)
         run: |
           sudo apt-get update
-          # تثبيت المتصفح والخطوط الأساسية لدعم العربية في النظام
-          sudo apt-get install -y chromium-browser fonts-kacst fonts-liberation
+          # تثبيت المكتبات الأساسية لعمل Wand و ImageMagick
+          sudo apt-get install -y libmagickwand-dev
 
       - name: Install Python Libraries
         run: |
           python -m pip install --upgrade pip
-          # تثبيت المكتبات المطلوبة للتقنية الجديدة
-          pip install feedparser requests html2image
+          # تثبيت المكتبات المطلوبة (Wand وبدائلها)
+          pip install feedparser requests wand arabic-reshaper python-bidi
 
-      - name: Run News Bot
+      - name: Run Python Bot
         env:
-          # تأكد من إضافة هذه الأسماء في Settings -> Secrets -> Actions
+          # تأكد أن هذه الأسماء مطابقة لما وضعته في Settings -> Secrets
           PAGE_ID: ${{ secrets.PAGE_ID }}
           PAGE_ACCESS_TOKEN: ${{ secrets.PAGE_ACCESS_TOKEN }}
         run: python main.py
 
-      - name: Save Status (Commit & Push)
+      - name: Commit and Push changes
         run: |
           git config --global user.name "GitHub Action Bot"
           git config --global user.email "actions@github.com"
-          # إضافة ملف السجل فقط لتجنب تكرار الأخبار
+          # إضافة التغييرات في ملف السجل فقط لتجنب تكرار المنشورات
           git add posted_articles.txt || true
-          git commit -m "Update posted articles log [skip ci]" || true
+          git commit -m "Update posted log [skip ci]" || true
           git push
