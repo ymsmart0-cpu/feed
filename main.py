@@ -150,12 +150,14 @@ def main():
         if res.status_code == 200:
             with open(POSTED_FILE, "a", encoding="utf-8") as f: f.write(h + "\n")
             print("✅ تم النشر!")
-            # تحديث الـ Log في GitHub
-            subprocess.run(["git", "config", "--global", user.email "bot@github.com"])
-            subprocess.run(["git", "config", "--global", user.name "Bot"])
+            
+            # --- تصحيح أسطر Git هنا ---
+            subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
+            subprocess.run(["git", "config", "--global", "user.name", "GitHub-Bot"])
             subprocess.run(["git", "add", POSTED_FILE])
-            subprocess.run(["git", "commit", "-m", "Update log"], check=False)
+            subprocess.run(["git", "commit", "-m", "Update posted articles log"], check=False)
             subprocess.run(["git", "push"], check=False)
+            # --------------------------
             break
 
 if __name__ == "__main__":
