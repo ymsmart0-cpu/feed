@@ -108,7 +108,7 @@ def get_article_image(entry):
     return match.group(1) if match else None
 
 # ============================
-# رسم النص
+# رسم النص RTL
 # ============================
 def wrap_text_rtl(text, draw, font, max_width):
     reshaped = arabic_reshaper.reshape(text)
@@ -137,10 +137,14 @@ def fit_text_to_box(text, draw, font_path, max_width, max_height):
     while size >= 14:
         font = ImageFont.truetype(font_path, size)
         lines = wrap_text_rtl(text, draw, font, max_width)
-        total_height = sum(draw.textbbox((0, 0), l, font=font)[3] for l in lines) + PADDING * len(lines)
+        total_height = sum(
+            draw.textbbox((0, 0), l, font=font)[3] for l in lines
+        ) + PADDING * len(lines)
+
         if total_height <= max_height:
             return font, lines
         size -= 1
+
     return font, lines
 
 # ============================
@@ -208,7 +212,13 @@ def main():
         for line in lines:
             w, h2 = draw.textbbox((0, 0), line, font=font)[2:]
             x = LEFT_X + (MAX_WIDTH - w) // 2
-            draw.text((x, y), line, font=font, fill="black")
+            draw.text(
+                (x, y),
+                line,
+                font=font,
+                fill="black",
+                direction="rtl"   # 👈 RTL حقيقي
+            )
             y += h2 + PADDING
 
         output = f"output_{h}.png"
