@@ -11,25 +11,22 @@ from bidi.algorithm import get_display
 import subprocess
 
 # ============================
-# الإعدادات
+# الإعدادات الأساسية
 # ============================
 RSS_URL = "https://qenanews-24.blogspot.com/feeds/posts/default?alt=rss"
-FONT_FILE = "Cairo-Bold.ttf"  # التأكد من مطابقة الاسم تماماً
+# تأكد أن هذا الاسم مطابق تماماً للملف الموجود في GitHub
+FONT_FILE = "Cairo-Bold.ttf" 
 START_FONT_SIZE = 40
 
 BG_PATH = "BG.png"
 LOGO_PATH = "logo1.png"
 
-IMAGE_WIDTH, IMAGE_HEIGHT = 1080, 1080
-ARTICLE_IMG_SIZE = (855, 460)
-ARTICLE_IMG_Y = 185
-
-# إحداثيات صندوق النص (المستطيل الأبيض في الأسفل)
+# إحداثيات الصندوق النصي (المستطيل الأبيض)
 LEFT_X, RIGHT_X = 110, 960
 TOP_Y, BOTTOM_Y = 725, 885
 MAX_WIDTH = RIGHT_X - LEFT_X
 MAX_HEIGHT = BOTTOM_Y - TOP_Y
-PADDING = 10
+PADDING = 12
 
 PAGE_ID = str(os.getenv("PAGE_ID", "")).strip()
 PAGE_ACCESS_TOKEN = str(os.getenv("PAGE_ACCESS_TOKEN", "")).strip()
@@ -40,68 +37,93 @@ POSTED_FILE = "posted_articles.txt"
 # معالجة النصوص (الحل الجذري)
 # ============================
 
-def process_line_arabic(text):
-    """ربط الحروف وقلب الاتجاه لسطر واحد"""
+def process_arabic_final(text):
+    """ربط الحروف وقلب الاتجاه لسطر واحد فقط"""
     if not text: return ""
+    # 1. ربط الحروف (بـ، ـبـ، ـب)
     reshaped = arabic_reshaper.reshape(text)
+    # 2. قلب الاتجاه (RTL)
     return get_display(reshaped)
 
-def wrap_text_logical(text, draw, font, max_width):
-    """تقسيم النص لأسطر وهو نص عادي (قبل القلب) لضمان الترتيب"""
+def wrap_text_correctly(text, draw, font, max_width):
+    """تقسيم النص لأسطر وهو نص عادي لضمان ترتيب الكلمات"""
     words = text.split()
     lines = []
     current_line = []
 
     for word in words:
         test_line = " ".join(current_line + [word])
-        # نقيس العرض بعد المعالجة المؤقتة للتجربة
-        w = draw.textbbox((0, 0), process_line_arabic(test_line), font=font)[2]
+        # نقيس العرض باستخدام المعالجة المؤقتة
+        w = draw.textbbox((0, 0), process_arabic_final(test_line), font=font)[2]
         
         if w <= max_width:
             current_line.append(word)
         else:
-            lines.append(" ".join(current_line))
+            if current_line:
+                lines.append(" ".join(current_line))
             current_line = [word]
     
     if current_line:
         lines.append(" ".join(current_line))
     
-    # الآن نعالج كل سطر نهائياً (ربط حروف وقلب اتجاه)
-    return [process_line_arabic(line) for line in lines]
+    # تحويل كل سطر نهائياً للعرض العربي
+    return [process_arabic_final(line) for line in lines]
 
 # ============================
-# وظائف الرسم والنشر
+# وظيفة الرسم
 # ============================
 
-def draw_text_on_image(image, title):
-    draw = ImageDraw.Draw(image)
+def create_post_image(title, entry):
+    # فتح الخلفية
+    bg = Image.open(BG_PATH).convert("RGBA").resize((1080, 1080))
     
-    # التأكد من وجود الخط
+    # جلب صورة المقال
+    try:
+        img_url = None
+        html = entry.summary if hasattr(entry, 'summary') else ""
+        match = re.search(r'<img[^>]+src="([^">]+)"', html)
+        img_url = match.group(1) if match else None
+        
+        if img_url:
+            r = requests.get(img_url, timeout=10)
+            art_img = Image.open(BytesIO(r.content)).convert("RGBA")
+        else:
+            art_img = Image.open(LOGO_PATH).convert("RGBA")
+    except:
+        art_img = Image.open(LOGO_PATH).convert("RGBA")
+
+    # دمج صورة المقال
+    art_img = art_img.resize((855, 460))
+    bg.paste(art_img, ((1080 - 855) // 2, 185), art_img)
+
+    # رسم النص
+    draw = ImageDraw.Draw(bg)
+    
+    # التحقق من وجود الخط
     if not os.path.exists(FONT_FILE):
-        print(f"❌ خطأ: لم يتم العثور على {FONT_FILE}")
-        return image
+        print(f"❌ خطأ حرج: ملف الخط {FONT_FILE} غير موجود!")
+        return None
 
     font = ImageFont.truetype(FONT_FILE, START_FONT_SIZE)
+    processed_lines = wrap_text_correctly(title, draw, font, MAX_WIDTH)
     
-    # 1. تقسيم النص (Logical Wrap) ثم المعالجة (Reshape & Bidi)
-    processed_lines = wrap_text_logical(title, draw, font, MAX_WIDTH)
-    
-    # 2. حساب الارتفاع الكلي للتوسيط العمودي
+    # حساب التوسيط العمودي
     total_h = sum(draw.textbbox((0, 0), l, font=font)[3] for l in processed_lines) + (len(processed_lines)-1)*PADDING
-    current_y = TOP_Y + (MAX_HEIGHT - total_h) // 2
+    y = TOP_Y + (MAX_HEIGHT - total_h) // 2
 
-    # 3. رسم الأسطر
     for line in processed_lines:
         w = draw.textbbox((0, 0), line, font=font)[2]
         h = draw.textbbox((0, 0), line, font=font)[3]
-        x = LEFT_X + (MAX_WIDTH - w) // 2  # توسيط أفقي
-        draw.text((x, current_y), line, font=font, fill="black")
-        current_y += h + PADDING
+        x = LEFT_X + (MAX_WIDTH - w) // 2
+        draw.text((x, y), line, font=font, fill="black")
+        y += h + PADDING
         
-    return image
+    return bg
 
 def main():
-    if not FB_URL: return
+    if not FB_URL or "None" in FB_URL:
+        print("❌ خطأ: لم يتم ضبط PAGE_ID في Secrets")
+        return
     
     feed = feedparser.parse(RSS_URL)
     posted = set()
@@ -114,36 +136,13 @@ def main():
         h = hashlib.md5(title.encode("utf-8")).hexdigest()
         if h in posted: continue
 
-        print(f"🔄 جاري المعالجة: {title[:50]}...")
+        print(f"🔄 جاري معالجة: {title[:50]}...")
         
-        # إنشاء الصورة
-        bg = Image.open(BG_PATH).convert("RGBA").resize((IMAGE_WIDTH, IMAGE_HEIGHT))
-        
-        # جلب صورة المقال
-        try:
-            img_url = None
-            if hasattr(entry, 'media_content'): img_url = entry.media_content[0]['url']
-            elif 'summary' in entry:
-                match = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
-                if match: img_url = match.group(1)
-            
-            if img_url:
-                r = requests.get(img_url, timeout=10)
-                art_img = Image.open(BytesIO(r.content)).convert("RGBA")
-            else:
-                art_img = Image.open(LOGO_PATH).convert("RGBA")
-        except:
-            art_img = Image.open(LOGO_PATH).convert("RGBA")
+        final_img = create_post_image(title, entry)
+        if final_img is None: break
 
-        art_img = art_img.resize(ARTICLE_IMG_SIZE)
-        bg.paste(art_img, ((IMAGE_WIDTH - ARTICLE_IMG_SIZE[0]) // 2, ARTICLE_IMG_Y), art_img)
-
-        # رسم النص العربي المصلح
-        final_image = draw_text_on_image(bg, title)
-        
-        # حفظ ونشر
         output = "final.png"
-        final_image.convert("RGB").save(output)
+        final_img.convert("RGB").save(output)
         
         with open(output, "rb") as f:
             res = requests.post(FB_URL, data={"access_token": PAGE_ACCESS_TOKEN, "caption": title}, files={"source": f})
@@ -151,9 +150,9 @@ def main():
         if res.status_code == 200:
             with open(POSTED_FILE, "a", encoding="utf-8") as f: f.write(h + "\n")
             print("✅ تم النشر!")
-            # تحديث Git
-            subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
-            subprocess.run(["git", "config", "--global", "user.name", "Bot"])
+            # تحديث الـ Log في GitHub
+            subprocess.run(["git", "config", "--global", user.email "bot@github.com"])
+            subprocess.run(["git", "config", "--global", user.name "Bot"])
             subprocess.run(["git", "add", POSTED_FILE])
             subprocess.run(["git", "commit", "-m", "Update log"], check=False)
             subprocess.run(["git", "push"], check=False)
