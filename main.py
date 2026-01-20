@@ -115,14 +115,16 @@ def wrap_text_rtl(text, draw, font, max_width):
     bidi_text = get_display(reshaped)
     words = bidi_text.split(" ")
     lines, current = [], ""
+
     for word in words:
-        test = word if not current else current + " " + word
+        test = current + " " + word if current else word
         w = draw.textbbox((0, 0), test, font=font)[2]
         if w <= max_width:
             current = test
         else:
             lines.append(current)
             current = word
+
     if current:
         lines.append(current)
     return lines
@@ -138,14 +140,6 @@ def fit_text_to_box(text, draw, font_path, max_width, max_height):
         size -= 1
     return font, lines
 
-def draw_text_box(draw, lines, font):
-    y = TOP_Y
-    for line in reversed(lines):
-        w, h = draw.textbbox((0, 0), line, font=font)[2:]
-        x = LEFT_X + (MAX_WIDTH - w) // 2
-        draw.text((x, y), line, font=font, fill="black")
-        y += h + PADDING
-
 # ============================
 # نشر فيسبوك
 # ============================
@@ -159,7 +153,10 @@ def post_to_facebook(image_path, title, article, url):
     with open(image_path, "rb") as img:
         r = requests.post(
             FB_PHOTO_URL,
-            data={"access_token": PAGE_ACCESS_TOKEN, "caption": caption},
+            data={
+                "access_token": PAGE_ACCESS_TOKEN,
+                "caption": caption
+            },
             files={"source": img}
         )
     return r.status_code == 200
@@ -169,7 +166,9 @@ def post_to_facebook(image_path, title, article, url):
 # ============================
 def main():
     now = datetime.now()
-    if now.hour < 8 and now.hour > 1:
+
+    # مسموح من 8 صباحًا إلى 1 صباحًا
+    if 1 < now.hour < 8:
         print("⏭ خارج وقت النشر")
         return
 
@@ -199,7 +198,13 @@ def main():
         bg.paste(article_img, (base_x, ARTICLE_IMG_Y), article_img)
 
         draw = ImageDraw.Draw(bg)
-        font, lines = fit_text(process_sensitive_text(title), draw)
+        font, lines = fit_text_to_box(
+            process_sensitive_text(title),
+            draw,
+            FONT_FILE,
+            MAX_WIDTH,
+            MAX_HEIGHT
+        )
 
         y = TOP_Y
         for line in reversed(lines):
