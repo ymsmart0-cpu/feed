@@ -6,19 +6,21 @@ import os
 import re
 from io import BytesIO
 from datetime import datetime
-
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import arabic_reshaper
-from bidi.algorithm import get_display
 import random
 import subprocess
+
+from PIL import Image, ImageDraw, ImageFont
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 # ============================
 # إعدادات عامة
 # ============================
 RSS_URL = "https://qenanews-24.blogspot.com/feeds/posts/default?alt=rss"
+
 FONT_FILE = "29ltbukrabolditalic.otf"
 START_FONT_SIZE = 40
+
 BG_PATH = "BG.png"
 LOGO_PATH = "logo1.png"
 
@@ -31,46 +33,102 @@ LEFT_X = 110
 RIGHT_X = 960
 TOP_Y = 725
 BOTTOM_Y = 885
-PADDING = 12 
+PADDING = 6
 MAX_WIDTH = RIGHT_X - LEFT_X
 MAX_HEIGHT = BOTTOM_Y - TOP_Y
 
 # ============================
-# دوال معالجة النصوص (إصلاح اتجاه اليمين لليسار)
+# فيسبوك (Secrets)
 # ============================
+PAGE_ID = os.getenv("PAGE_ID")
+PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
+FB_PHOTO_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos"
 
+# ============================
+# منع التكرار
+# ============================
+POSTED_FILE = "posted_articles.txt"
+
+# ============================
+# كلمات حساسة
+# ============================
+SEPARATORS = ["$", "&", "%", "*", "~", "+", "|", "•", "=", "^", ":", "!"]
+
+SENSITIVE_WORDS = [
+    "اشترك","الآن","اضغط","شاهد","فرصة","اربح","مجانا","عرض","تفوت","الفرصة",
+    "قتل","جريمة","ذبح","جثة","دم","دماء","اغتصاب","تعذيب","طعن","تفجير","انتحار"
+]
+
+def split_sensitive_word(word):
+    if word in SENSITIVE_WORDS:
+        pos = 2 if len(word) >= 3 else 1
+        return word[:pos] + random.choice(SEPARATORS) + word[pos:]
+    return word
+
+def process_sensitive_text(text):
+    return " ".join(split_sensitive_word(w) for w in text.split())
+
+# ============================
+# أدوات مساعدة
+# ============================
+def load_posted():
+    if not os.path.exists(POSTED_FILE):
+        return set()
+    with open(POSTED_FILE, "r", encoding="utf-8") as f:
+        return set(line.strip() for line in f)
+
+def save_posted(hash_id):
+    with open(POSTED_FILE, "a", encoding="utf-8") as f:
+        f.write(hash_id + "\n")
+
+def git_commit():
+    try:
+        subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
+        subprocess.run(["git", "config", "--global", "user.name", "GitHub Bot"])
+        subprocess.run(["git", "add", POSTED_FILE])
+        subprocess.run(["git", "commit", "-m", "Update posted articles"], check=False)
+        subprocess.run(["git", "push"], check=False)
+    except:
+        pass
+
+def get_hash(text):
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+def clean_html(text):
+    return re.sub("<.*?>", "", text)
+
+# ============================
+# صورة المقال
+# ============================
+def get_article_image(entry):
+    if hasattr(entry, "media_content") and entry.media_content:
+        return entry.media_content[0].get("url")
+    html = entry.summary if hasattr(entry, "summary") else ""
+    match = re.search(r'<img[^>]+src="([^">]+)"', html)
+    return match.group(1) if match else None
+
+# ============================
+# رسم النص
+# ============================
 def wrap_text_rtl(text, draw, font, max_width):
-    """
-    تقسم النص لأسطر مع الحفاظ على الترتيب من اليمين لليسار.
-    """
-    # 1. تقسيم النص لكلمات خام (الترتيب طبيعي هنا)
-    words = text.split()
+    reshaped = arabic_reshaper.reshape(text)
+    bidi_text = get_display(reshaped)
+
+    words = bidi_text.split(" ")
     lines = []
-    current_line_words = []
+    current = ""
 
     for word in words:
-        # اختبار طول السطر بإضافة الكلمة (مع تشكيل مؤقت للقياس)
-        test_line = " ".join(current_line_words + [word])
-        reshaped_test = arabic_reshaper.reshape(test_line)
-        display_test = get_display(reshaped_test)
-        
-        w = draw.textbbox((0, 0), display_test, font=font)[2]
-        
+        test = word if not current else current + " " + word
+        w = draw.textbbox((0, 0), test, font=font)[2]
         if w <= max_width:
-            current_line_words.append(word)
+            current = test
         else:
-            # السطر اكتمل: تشكيله وقلبه ليصبح RTL صحيحاً
-            if current_line_words:
-                full_line = " ".join(current_line_words)
-                reshaped_line = arabic_reshaper.reshape(full_line)
-                lines.append(get_display(reshaped_line))
-            current_line_words = [word]
+            lines.append(current)
+            current = word
 
-    # إضافة السطر الأخير
-    if current_line_words:
-        full_line = " ".join(current_line_words)
-        reshaped_line = arabic_reshaper.reshape(full_line)
-        lines.append(get_display(reshaped_line))
+    if current:
+        lines.append(current)
 
     return lines
 
@@ -79,50 +137,54 @@ def fit_text_to_box(text, draw, font_path, max_width, max_height):
     while size >= 14:
         font = ImageFont.truetype(font_path, size)
         lines = wrap_text_rtl(text, draw, font, max_width)
-        
-        # حساب الارتفاع الكلي الفعلي
-        total_h = sum([draw.textbbox((0, 0), l, font=font)[3] - draw.textbbox((0, 0), l, font=font)[1] for l in lines]) + (len(lines)-1)*PADDING
-            
-        if total_h <= max_height:
+        total_height = sum(draw.textbbox((0, 0), l, font=font)[3] for l in lines) + PADDING * len(lines)
+        if total_height <= max_height:
             return font, lines
         size -= 1
-    return ImageFont.truetype(font_path, 14), lines
+    return font, lines
 
 # ============================
-# بقية وظائف النظام
+# نشر فيسبوك
 # ============================
+def post_to_facebook(image_path, title, article, url):
+    caption = (
+        f"{process_sensitive_text(title)}\n\n"
+        f"{process_sensitive_text(' '.join(article.split()[:40]))}...\n\n"
+        f"{url}"
+    )
 
-def clean_html(text):
-    return re.sub("<.*?>", "", text).strip() if text else ""
+    with open(image_path, "rb") as img:
+        r = requests.post(
+            FB_PHOTO_URL,
+            data={"access_token": PAGE_ACCESS_TOKEN, "caption": caption},
+            files={"source": img}
+        )
 
-def get_article_image(entry):
-    if hasattr(entry, "media_content") and entry.media_content:
-        return entry.media_content[0].get("url")
-    html = entry.summary if hasattr(entry, "summary") else ""
-    match = re.search(r'<img[^>]+src="([^">]+)"', html)
-    return match.group(1) if match else None
+    return r.status_code == 200
 
+# ============================
+# التنفيذ الرئيسي
+# ============================
 def main():
-    PAGE_ID = os.getenv("PAGE_ID")
-    PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
-    FB_PHOTO_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos"
-    POSTED_FILE = "posted_articles.txt"
+    now = datetime.now()
+    if 1 < now.hour < 8:
+        print("⏭ خارج وقت النشر")
+        return
 
     feed = feedparser.parse(RSS_URL)
-    if not os.path.exists(POSTED_FILE): open(POSTED_FILE, "w").close()
-    with open(POSTED_FILE, "r") as f: posted_hashes = f.read().splitlines()
+    posted = load_posted()
 
     for entry in feed.entries:
         title = clean_html(entry.title)
-        h = hashlib.md5(title.encode()).hexdigest()
-        if h in posted_hashes: continue
+        text = clean_html(entry.summary)
 
-        try:
-            bg = Image.open(BG_PATH).convert("RGBA").resize((IMAGE_WIDTH, IMAGE_HEIGHT))
-            draw = ImageDraw.Draw(bg)
-        except: print("❌ خطأ: ملف BG.png مفقود"); break
+        h = get_hash(title + text)
+        if h in posted:
+            continue
 
+        bg = Image.open(BG_PATH).convert("RGBA").resize((IMAGE_WIDTH, IMAGE_HEIGHT))
         img_url = get_article_image(entry)
+
         try:
             r = requests.get(img_url, timeout=10)
             article_img = Image.open(BytesIO(r.content)).convert("RGBA")
@@ -130,34 +192,34 @@ def main():
             article_img = Image.open(LOGO_PATH).convert("RGBA")
 
         article_img = article_img.resize(ARTICLE_IMG_SIZE)
-        bg.paste(article_img, ((IMAGE_WIDTH - ARTICLE_IMG_SIZE[0]) // 2, ARTICLE_IMG_Y), article_img)
+        base_x = (IMAGE_WIDTH - ARTICLE_IMG_SIZE[0]) // 2
+        bg.paste(article_img, (base_x, ARTICLE_IMG_Y), article_img)
 
-        # تجهيز الخط والأسطر (الأسطر الآن مخزنة في مصفوفة lines مقلوبة وجاهزة للرسم)
-        font, lines = fit_text_to_box(title, draw, FONT_FILE, MAX_WIDTH, MAX_HEIGHT)
-        
-        # حساب التوسيط الرأسي في المربع الأبيض السفلي
-        total_text_h = sum([draw.textbbox((0, 0), l, font=font)[3] - draw.textbbox((0, 0), l, font=font)[1] for l in lines]) + (len(lines)-1)*PADDING
-        y_cursor = TOP_Y + (MAX_HEIGHT - total_text_h) // 2
+        draw = ImageDraw.Draw(bg)
+        font, lines = fit_text_to_box(
+            process_sensitive_text(title),
+            draw,
+            FONT_FILE,
+            MAX_WIDTH,
+            MAX_HEIGHT
+        )
 
+        y = TOP_Y
         for line in lines:
-            bbox = draw.textbbox((0, 0), line, font=font)
-            line_w = bbox[2] - bbox[0]
-            line_h = bbox[3] - bbox[1]
-            
-            # رسم السطر في المنتصف الأفقي (سيظهر من اليمين لليسار لأننا استخدمنا get_display داخل الدالة)
-            draw.text((LEFT_X + (MAX_WIDTH - line_w) // 2, y_cursor), line, font=font, fill="black")
-            y_cursor += line_h + PADDING
+            w, h2 = draw.textbbox((0, 0), line, font=font)[2:]
+            x = LEFT_X + (MAX_WIDTH - w) // 2
+            draw.text((x, y), line, font=font, fill="black")
+            y += h2 + PADDING
 
-        output = f"post_{h}.png"
+        output = f"output_{h}.png"
         bg.save(output)
-        
-        with open(output, "rb") as img_file:
-            res = requests.post(FB_PHOTO_URL, data={"access_token": PAGE_ACCESS_TOKEN, "caption": title}, files={"source": img_file})
-            
-        if res.status_code == 200:
-            with open(POSTED_FILE, "a") as f: f.write(h + "\n")
-            print(f"✅ تم النشر بنجاح: {title}")
-            break 
 
+        if post_to_facebook(output, title, text, entry.link):
+            save_posted(h)
+            git_commit()
+            print("✅ تم النشر")
+            break
+
+# ============================
 if __name__ == "__main__":
     main()
