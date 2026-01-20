@@ -17,10 +17,8 @@ import subprocess
 # إعدادات عامة
 # ============================
 RSS_URL = "https://qenanews-24.blogspot.com/feeds/posts/default?alt=rss"
-
 FONT_FILE = "29ltbukrabolditalic.otf"
 START_FONT_SIZE = 40
-
 BG_PATH = "BG.png"
 LOGO_PATH = "logo1.png"
 
@@ -29,34 +27,30 @@ IMAGE_HEIGHT = 1080
 ARTICLE_IMG_SIZE = (855, 460)
 ARTICLE_IMG_Y = 185
 
+# إحداثيات منطقة الكتابة (المربع الأبيض السفلي)
 LEFT_X = 110
 RIGHT_X = 960
 TOP_Y = 725
 BOTTOM_Y = 885
-PADDING = 8  # زيادة بسيطة للمسافة بين الأسطر لجمال التصميم
+PADDING = 10 
 MAX_WIDTH = RIGHT_X - LEFT_X
 MAX_HEIGHT = BOTTOM_Y - TOP_Y
 
 # ============================
-# فيسبوك (من Secrets)
+# فيسبوك وGitHub (من Secrets)
 # ============================
 PAGE_ID = os.getenv("PAGE_ID")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
 FB_PHOTO_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos"
-
-# ============================
-# منع التكرار
-# ============================
 POSTED_FILE = "posted_articles.txt"
 
 # ============================
-# كلمات حساسة
+# معالجة النصوص الحساسة
 # ============================
-SEPARATORS = ["$", "&", "%", "*", "~", "+", "|", "•", "=", "^", ":", "!"]
-
+SEPARATORS = ["•", "|", "*", "•", "ـ", "-", "!", "^"]
 SENSITIVE_WORDS = [
-    "اشترك","الآن","اضغط","شاهد","فرصة","اربح","مجانا","عرض","تفوت","الفرصة",
-    "قتل","جريمة","ذبح","جثة","دم","دماء","اغتصاب","تعذيب","طعن","تفجير","انتحار"
+    "قتل","جريمة","ذبح","جثة","دم","دماء","اغتصاب","تعذيب","طعن","تفجير","انتحار",
+    "اشترك","الآن","اضغط","شاهد","فرصة","اربح","مجانا","عرض"
 ]
 
 def split_sensitive_word(word):
@@ -66,14 +60,14 @@ def split_sensitive_word(word):
     return word
 
 def process_sensitive_text(text):
+    if not text: return ""
     return " ".join(split_sensitive_word(w) for w in text.split())
 
 # ============================
-# أدوات مساعدة
+# أدوات مساعدة للبيانات
 # ============================
 def load_posted():
-    if not os.path.exists(POSTED_FILE):
-        return set()
+    if not os.path.exists(POSTED_FILE): return set()
     with open(POSTED_FILE, "r", encoding="utf-8") as f:
         return set(line.strip() for line in f)
 
@@ -88,19 +82,15 @@ def git_commit():
         subprocess.run(["git", "add", POSTED_FILE])
         subprocess.run(["git", "commit", "-m", "Update posted articles"], check=False)
         subprocess.run(["git", "push"], check=False)
-    except:
-        pass
+    except: pass
 
 def get_hash(text):
     return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 def clean_html(text):
     if not text: return ""
-    return re.sub("<.*?>", "", text)
+    return re.sub("<.*?>", "", text).strip()
 
-# ============================
-# صورة المقال
-# ============================
 def get_article_image(entry):
     if hasattr(entry, "media_content") and entry.media_content:
         return entry.media_content[0].get("url")
@@ -109,32 +99,31 @@ def get_article_image(entry):
     return match.group(1) if match else None
 
 # ============================
-# رسم النص (RTL صحيح ومُعدل)
+# معالجة الرسم والكتابة (الحل الصحيح)
 # ============================
 def wrap_text_rtl(text, draw, font, max_width):
-    # الخطوة 1: تشكيل الحروف العربية فقط
+    # 1. تشكيل الحروف العربية أولاً (Reshape)
     reshaped_text = arabic_reshaper.reshape(text)
-    words = reshaped_text.split(" ")
+    words = reshaped_text.split()
     
     lines = []
     current_line_words = []
 
     for word in words:
-        # اختبار العرض بإضافة الكلمة للسطر الحالي
+        # اختبار إضافة كلمة للسطر
         test_line = " ".join(current_line_words + [word])
-        # استخدام textbbox لحساب العرض الحقيقي
         w = draw.textbbox((0, 0), test_line, font=font)[2]
         
         if w <= max_width:
             current_line_words.append(word)
         else:
-            # عندما يمتلئ السطر، نقوم بقلبه (Bidi) وإضافته للقائمة
+            # السطر اكتمل، نقوم بقلبه (Bidi) الآن ليظهر عربياً صحيحاً
             if current_line_words:
                 line_to_process = " ".join(current_line_words)
                 lines.append(get_display(line_to_process))
             current_line_words = [word]
 
-    # إضافة ما تبقى من الكلمات في آخر سطر
+    # إضافة آخر سطر
     if current_line_words:
         line_to_process = " ".join(current_line_words)
         lines.append(get_display(line_to_process))
@@ -143,51 +132,46 @@ def wrap_text_rtl(text, draw, font, max_width):
 
 def fit_text_to_box(text, draw, font_path, max_width, max_height):
     size = START_FONT_SIZE
-    while size >= 12:
+    while size >= 14:
         font = ImageFont.truetype(font_path, size)
         lines = wrap_text_rtl(text, draw, font, max_width)
         
-        # حساب الارتفاع الكلي الفعلي للأسطر المقسمة
-        total_height = 0
+        # حساب الارتفاع الكلي الفعلي
+        total_h = 0
         for line in lines:
             bbox = draw.textbbox((0, 0), line, font=font)
-            line_height = bbox[3] - bbox[1]
-            total_height += line_height + PADDING
+            total_h += (bbox[3] - bbox[1]) + PADDING
             
-        if total_height - PADDING <= max_height:
+        if total_h - PADDING <= max_height:
             return font, lines
         size -= 1
-    return ImageFont.truetype(font_path, 12), lines
+    return ImageFont.truetype(font_path, 14), lines
 
 # ============================
-# نشر فيسبوك
+# وظائف النشر
 # ============================
-def post_to_facebook(image_path, title, article, url):
+def post_to_facebook(image_path, title, article_text, url):
     caption = (
         f"{process_sensitive_text(title)}\n\n"
-        f"{process_sensitive_text(' '.join(clean_html(article).split()[:40]))}...\n\n"
-        f"{url}"
+        f"{process_sensitive_text(' '.join(clean_html(article_text).split()[:35]))}...\n\n"
+        f"التفاصيل: {url}"
     )
-
-    with open(image_path, "rb") as img:
-        r = requests.post(
-            FB_PHOTO_URL,
-            data={
-                "access_token": PAGE_ACCESS_TOKEN,
-                "caption": caption
-            },
-            files={"source": img}
-        )
-    return r.status_code == 200
+    try:
+        with open(image_path, "rb") as img:
+            r = requests.post(
+                FB_PHOTO_URL,
+                data={"access_token": PAGE_ACCESS_TOKEN, "caption": caption},
+                files={"source": img}
+            )
+        return r.status_code == 200
+    except: return False
 
 # ============================
-# التنفيذ الرئيسي
+# التشغيل الرئيسي
 # ============================
 def main():
     now = datetime.now()
-
-    # مسموح من 8 صباحًا إلى 1 صباحًا (اختياري)
-    if 1 < now.hour < 8:
+    if 1 < now.hour < 7: # التوقف وقت الفجر
         print("⏭ خارج وقت النشر")
         return
 
@@ -197,19 +181,17 @@ def main():
     for entry in feed.entries:
         title = clean_html(entry.title)
         summary = clean_html(entry.summary if hasattr(entry, 'summary') else "")
+        h = get_hash(title)
 
-        h = get_hash(title + summary)
-        if h in posted:
-            continue
+        if h in posted: continue
 
-        # تجهيز الخلفية
+        # 1. إنشاء صورة الخلفية
         try:
             bg = Image.open(BG_PATH).convert("RGBA").resize((IMAGE_WIDTH, IMAGE_HEIGHT))
-        except Exception as e:
-            print(f"❌ خطأ في تحميل الخلفية: {e}")
-            return
+        except: 
+            print("❌ ملف الخلفية BG.png غير موجود"); return
 
-        # تحميل صورة المقال
+        # 2. جلب صورة الخبر
         img_url = get_article_image(entry)
         try:
             r = requests.get(img_url, timeout=10)
@@ -217,50 +199,37 @@ def main():
         except:
             article_img = Image.open(LOGO_PATH).convert("RGBA")
 
-        # تغيير حجم صورة المقال ووضعها في المنتصف
+        # 3. دمج صورة الخبر في التصميم
         article_img = article_img.resize(ARTICLE_IMG_SIZE)
-        base_x = (IMAGE_WIDTH - ARTICLE_IMG_SIZE[0]) // 2
-        bg.paste(article_img, (base_x, ARTICLE_IMG_Y), article_img)
+        bg.paste(article_img, ((IMAGE_WIDTH - ARTICLE_IMG_SIZE[0]) // 2, ARTICLE_IMG_Y), article_img)
 
-        # رسم النص المعالج
+        # 4. معالجة ورسم النص
         draw = ImageDraw.Draw(bg)
-        processed_title = process_sensitive_text(title)
-        
-        font, lines = fit_text_to_box(
-            processed_title,
-            draw,
-            FONT_FILE,
-            MAX_WIDTH,
-            MAX_HEIGHT
-        )
+        final_title = process_sensitive_text(title)
+        font, lines = fit_text_to_box(final_title, draw, FONT_FILE, MAX_WIDTH, MAX_HEIGHT)
 
-        # حساب الارتفاع الكلي لبدء الرسم من المنتصف الرأسي للبوكس أو من الأعلى
-        total_lines_height = sum([draw.textbbox((0, 0), l, font=font)[3] - draw.textbbox((0, 0), l, font=font)[1] for l in lines]) + (len(lines)-1)*PADDING
-        y = TOP_Y + (MAX_HEIGHT - total_lines_height) // 2 # للتوسيط الرأسي داخل المنطقة المحددة
+        # حساب التوسيط الرأسي
+        total_text_h = sum([draw.textbbox((0, 0), l, font=font)[3] - draw.textbbox((0, 0), l, font=font)[1] for l in lines]) + (len(lines)-1)*PADDING
+        y_cursor = TOP_Y + (MAX_HEIGHT - total_text_h) // 2
 
         for line in lines:
             bbox = draw.textbbox((0, 0), line, font=font)
-            w = bbox[2] - bbox[0]
+            line_w = bbox[2] - bbox[0]
             line_h = bbox[3] - bbox[1]
-            
-            x = LEFT_X + (MAX_WIDTH - w) // 2 # توسيط أفقي
-            draw.text((x, y), line, font=font, fill="black")
-            y += line_h + PADDING
+            # رسم النص في المنتصف الأفقي
+            draw.text((LEFT_X + (MAX_WIDTH - line_w) // 2, y_cursor), line, font=font, fill="black")
+            y_cursor += line_h + PADDING
 
-        output = f"output_{h}.png"
+        # 5. الحفظ والنشر
+        output = f"post_{h}.png"
         bg.save(output)
-
-        # محاولة النشر
+        
         if post_to_facebook(output, title, summary, entry.link):
             save_posted(h)
             git_commit()
-            print(f"✅ تم النشر بنجاح: {title}")
-            # حذف الصورة بعد النشر لتوفير المساحة
+            print(f"✅ تم نشر: {title}")
             if os.path.exists(output): os.remove(output)
-            break
-        else:
-            print(f"❌ فشل النشر على فيسبوك.")
+            break # نشر خبر واحد في كل دورة تشغيل
 
-# ============================
 if __name__ == "__main__":
     main()
