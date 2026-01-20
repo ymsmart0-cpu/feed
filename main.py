@@ -5,179 +5,159 @@ import hashlib
 import os
 import re
 from io import BytesIO
-from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
-import random
 import subprocess
 
 # ============================
-# إعدادات عامة
+# الإعدادات
 # ============================
 RSS_URL = "https://qenanews-24.blogspot.com/feeds/posts/default?alt=rss"
-
-# تأكد أن هذا الاسم مطابق تماماً لاسم الملف الذي رفعته (بما في ذلك الحروف الكبيرة)
-FONT_FILE = "Cairo-Bold.ttf" 
-START_FONT_SIZE = 42
+FONT_FILE = "Cairo-Bold.ttf"  # التأكد من مطابقة الاسم تماماً
+START_FONT_SIZE = 40
 
 BG_PATH = "BG.png"
 LOGO_PATH = "logo1.png"
 
-IMAGE_WIDTH = 1080
-IMAGE_HEIGHT = 1080
+IMAGE_WIDTH, IMAGE_HEIGHT = 1080, 1080
 ARTICLE_IMG_SIZE = (855, 460)
 ARTICLE_IMG_Y = 185
 
-LEFT_X = 110
-RIGHT_X = 960
-TOP_Y = 725
-BOTTOM_Y = 885
-PADDING = 12
+# إحداثيات صندوق النص (المستطيل الأبيض في الأسفل)
+LEFT_X, RIGHT_X = 110, 960
+TOP_Y, BOTTOM_Y = 725, 885
 MAX_WIDTH = RIGHT_X - LEFT_X
 MAX_HEIGHT = BOTTOM_Y - TOP_Y
+PADDING = 10
 
-# استدعاء البيانات من Secrets
 PAGE_ID = str(os.getenv("PAGE_ID", "")).strip()
 PAGE_ACCESS_TOKEN = str(os.getenv("PAGE_ACCESS_TOKEN", "")).strip()
-FB_PHOTO_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos" if PAGE_ID else None
-
+FB_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos" if PAGE_ID else None
 POSTED_FILE = "posted_articles.txt"
 
 # ============================
-# معالجة النص العربي (اليمين لليسار)
+# معالجة النصوص (الحل الجذري)
 # ============================
-def fix_arabic_display(text):
-    """إعادة تشكيل الحروف وعكس الاتجاه للعرض الصحيح"""
+
+def process_line_arabic(text):
+    """ربط الحروف وقلب الاتجاه لسطر واحد"""
     if not text: return ""
-    # 1. ربط الحروف ببعضها
     reshaped = arabic_reshaper.reshape(text)
-    # 2. ترتيب السطر من اليمين لليسار
     return get_display(reshaped)
 
-def wrap_arabic_text(text, draw, font, max_width):
-    """تقسيم النص لأسطر مع الحفاظ على ترتيب الكلمات الصحيح"""
+def wrap_text_logical(text, draw, font, max_width):
+    """تقسيم النص لأسطر وهو نص عادي (قبل القلب) لضمان الترتيب"""
     words = text.split()
     lines = []
     current_line = []
-    
+
     for word in words:
         test_line = " ".join(current_line + [word])
-        # نقيس العرض بالنص المشكل برمجياً
-        display_test = fix_arabic_display(test_line)
-        w = draw.textbbox((0, 0), display_test, font=font)[2]
+        # نقيس العرض بعد المعالجة المؤقتة للتجربة
+        w = draw.textbbox((0, 0), process_line_arabic(test_line), font=font)[2]
         
         if w <= max_width:
             current_line.append(word)
         else:
-            if current_line:
-                # معالجة السطر المكتمل ليصبح RTL
-                lines.append(fix_arabic_display(" ".join(current_line)))
+            lines.append(" ".join(current_line))
             current_line = [word]
-            
-    if current_line:
-        lines.append(fix_arabic_display(" ".join(current_line)))
-        
-    return lines
-
-# ============================
-# دالة الرسم باستخدام الطبقة الشفافة
-# ============================
-def apply_text_layer(base_img, lines, font):
-    # إنشاء طبقة شفافة
-    txt_layer = Image.new('RGBA', base_img.size, (255, 255, 255, 0))
-    draw = ImageDraw.Draw(txt_layer)
     
-    # حساب إجمالي الارتفاع لتوسيط النص عمودياً
-    line_heights = [draw.textbbox((0, 0), l, font=font)[3] for l in lines]
-    total_text_h = sum(line_heights) + (len(lines) - 1) * PADDING
-    current_y = TOP_Y + (MAX_HEIGHT - total_text_h) // 2
+    if current_line:
+        lines.append(" ".join(current_line))
+    
+    # الآن نعالج كل سطر نهائياً (ربط حروف وقلب اتجاه)
+    return [process_line_arabic(line) for line in lines]
 
-    for line in lines:
+# ============================
+# وظائف الرسم والنشر
+# ============================
+
+def draw_text_on_image(image, title):
+    draw = ImageDraw.Draw(image)
+    
+    # التأكد من وجود الخط
+    if not os.path.exists(FONT_FILE):
+        print(f"❌ خطأ: لم يتم العثور على {FONT_FILE}")
+        return image
+
+    font = ImageFont.truetype(FONT_FILE, START_FONT_SIZE)
+    
+    # 1. تقسيم النص (Logical Wrap) ثم المعالجة (Reshape & Bidi)
+    processed_lines = wrap_text_logical(title, draw, font, MAX_WIDTH)
+    
+    # 2. حساب الارتفاع الكلي للتوسيط العمودي
+    total_h = sum(draw.textbbox((0, 0), l, font=font)[3] for l in processed_lines) + (len(processed_lines)-1)*PADDING
+    current_y = TOP_Y + (MAX_HEIGHT - total_h) // 2
+
+    # 3. رسم الأسطر
+    for line in processed_lines:
         w = draw.textbbox((0, 0), line, font=font)[2]
         h = draw.textbbox((0, 0), line, font=font)[3]
-        # التوسيط الأفقي
-        x = LEFT_X + (MAX_WIDTH - w) // 2
+        x = LEFT_X + (MAX_WIDTH - w) // 2  # توسيط أفقي
         draw.text((x, current_y), line, font=font, fill="black")
         current_y += h + PADDING
-    
-    # دمج الطبقة الشفافة مع الخلفية
-    return Image.alpha_composite(base_img.convert('RGBA'), txt_layer)
+        
+    return image
 
-# ============================
-# التنفيذ الرئيسي
-# ============================
 def main():
-    if not FB_PHOTO_URL or "None" in FB_PHOTO_URL:
-        print("❌ خطأ: الـ PAGE_ID غير موجود في Secrets")
-        return
-
+    if not FB_URL: return
+    
     feed = feedparser.parse(RSS_URL)
-    posted = []
+    posted = set()
     if os.path.exists(POSTED_FILE):
-        with open(POSTED_FILE, "r", encoding="utf-8") as f: 
-            posted = f.read().splitlines()
+        with open(POSTED_FILE, "r", encoding="utf-8") as f:
+            posted = set(f.read().splitlines())
 
     for entry in feed.entries:
         title = re.sub("<.*?>", "", entry.title)
         h = hashlib.md5(title.encode("utf-8")).hexdigest()
         if h in posted: continue
 
-        print(f"🔄 جاري معالجة المقال: {title[:50]}...")
+        print(f"🔄 جاري المعالجة: {title[:50]}...")
         
-        # 1. فتح الخلفية
-        if not os.path.exists(BG_PATH):
-            print(f"❌ خطأ: ملف الخلفية {BG_PATH} غير موجود")
-            return
+        # إنشاء الصورة
         bg = Image.open(BG_PATH).convert("RGBA").resize((IMAGE_WIDTH, IMAGE_HEIGHT))
         
-        # 2. جلب صورة المقال
+        # جلب صورة المقال
         try:
-            html = entry.summary if hasattr(entry, "summary") else ""
-            img_match = re.search(r'<img[^>]+src="([^">]+)"', html)
-            r = requests.get(img_match.group(1), timeout=10)
-            art_img = Image.open(BytesIO(r.content)).convert("RGBA").resize(ARTICLE_IMG_SIZE)
+            img_url = None
+            if hasattr(entry, 'media_content'): img_url = entry.media_content[0]['url']
+            elif 'summary' in entry:
+                match = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
+                if match: img_url = match.group(1)
+            
+            if img_url:
+                r = requests.get(img_url, timeout=10)
+                art_img = Image.open(BytesIO(r.content)).convert("RGBA")
+            else:
+                art_img = Image.open(LOGO_PATH).convert("RGBA")
         except:
-            print("⚠️ لم يتم العثور على صورة للمقال، سيتم استخدام اللوجو.")
-            art_img = Image.open(LOGO_PATH).convert("RGBA").resize(ARTICLE_IMG_SIZE)
+            art_img = Image.open(LOGO_PATH).convert("RGBA")
+
+        art_img = art_img.resize(ARTICLE_IMG_SIZE)
+        bg.paste(art_img, ((IMAGE_WIDTH - ARTICLE_IMG_SIZE[0]) // 2, ARTICLE_IMG_Y), art_img)
+
+        # رسم النص العربي المصلح
+        final_image = draw_text_on_image(bg, title)
         
-        bg.paste(art_img, ((IMAGE_WIDTH-ARTICLE_IMG_SIZE[0])//2, ARTICLE_IMG_Y), art_img)
-
-        # 3. معالجة النص
-        draw = ImageDraw.Draw(bg)
-        if not os.path.exists(FONT_FILE):
-            print(f"❌ خطأ: ملف الخط {FONT_FILE} غير موجود في المستودع!")
-            return
-
-        font = ImageFont.truetype(FONT_FILE, START_FONT_SIZE)
-        lines = wrap_arabic_text(title, draw, font, MAX_WIDTH)
-        
-        # استخدام الطبقة الشفافة لضمان جودة النص
-        final_img = apply_text_layer(bg, lines, font)
-
-        # 4. الحفظ والنشر
-        output = "final_post.png"
-        final_img.convert("RGB").save(output)
+        # حفظ ونشر
+        output = "final.png"
+        final_image.convert("RGB").save(output)
         
         with open(output, "rb") as f:
-            res = requests.post(FB_PHOTO_URL, 
-                                data={"access_token": PAGE_ACCESS_TOKEN, "caption": title}, 
-                                files={"source": f})
+            res = requests.post(FB_URL, data={"access_token": PAGE_ACCESS_TOKEN, "caption": title}, files={"source": f})
         
         if res.status_code == 200:
-            with open(POSTED_FILE, "a", encoding="utf-8") as f: 
-                f.write(h + "\n")
-            print("✅ تم النشر بنجاح على فيسبوك!")
-            
-            # دفع التحديثات لـ Git لحفظ حالة المقالات المنشورة
+            with open(POSTED_FILE, "a", encoding="utf-8") as f: f.write(h + "\n")
+            print("✅ تم النشر!")
+            # تحديث Git
             subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
-            subprocess.run(["git", "config", "--global", "user.name", "GitHub Bot"])
+            subprocess.run(["git", "config", "--global", "user.name", "Bot"])
             subprocess.run(["git", "add", POSTED_FILE])
-            subprocess.run(["git", "commit", "-m", "Update posted log"], check=False)
+            subprocess.run(["git", "commit", "-m", "Update log"], check=False)
             subprocess.run(["git", "push"], check=False)
-            break 
-        else:
-            print(f"❌ فشل النشر: {res.text}")
+            break
 
 if __name__ == "__main__":
     main()
