@@ -33,7 +33,7 @@ LEFT_X = 110
 RIGHT_X = 960
 TOP_Y = 725
 BOTTOM_Y = 885
-PADDING = 5
+PADDING = 8  # زيادة بسيطة للمسافة بين الأسطر لجمال التصميم
 MAX_WIDTH = RIGHT_X - LEFT_X
 MAX_HEIGHT = BOTTOM_Y - TOP_Y
 
@@ -95,6 +95,7 @@ def get_hash(text):
     return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 def clean_html(text):
+    if not text: return ""
     return re.sub("<.*?>", "", text)
 
 # ============================
@@ -108,26 +109,35 @@ def get_article_image(entry):
     return match.group(1) if match else None
 
 # ============================
-# رسم النص (RTL صحيح)
+# رسم النص (RTL صحيح ومُعدل)
 # ============================
 def wrap_text_rtl(text, draw, font, max_width):
-    reshaped = arabic_reshaper.reshape(text)
-    bidi_text = get_display(reshaped)
-
-    words = bidi_text.split(" ")
-    lines, current = [], ""
+    # الخطوة 1: تشكيل الحروف العربية فقط
+    reshaped_text = arabic_reshaper.reshape(text)
+    words = reshaped_text.split(" ")
+    
+    lines = []
+    current_line_words = []
 
     for word in words:
-        test = current + " " + word if current else word
-        w = draw.textbbox((0, 0), test, font=font)[2]
+        # اختبار العرض بإضافة الكلمة للسطر الحالي
+        test_line = " ".join(current_line_words + [word])
+        # استخدام textbbox لحساب العرض الحقيقي
+        w = draw.textbbox((0, 0), test_line, font=font)[2]
+        
         if w <= max_width:
-            current = test
+            current_line_words.append(word)
         else:
-            lines.append(current)
-            current = word
+            # عندما يمتلئ السطر، نقوم بقلبه (Bidi) وإضافته للقائمة
+            if current_line_words:
+                line_to_process = " ".join(current_line_words)
+                lines.append(get_display(line_to_process))
+            current_line_words = [word]
 
-    if current:
-        lines.append(current)
+    # إضافة ما تبقى من الكلمات في آخر سطر
+    if current_line_words:
+        line_to_process = " ".join(current_line_words)
+        lines.append(get_display(line_to_process))
 
     return lines
 
@@ -136,11 +146,18 @@ def fit_text_to_box(text, draw, font_path, max_width, max_height):
     while size >= 12:
         font = ImageFont.truetype(font_path, size)
         lines = wrap_text_rtl(text, draw, font, max_width)
-        height = sum(draw.textbbox((0, 0), l, font=font)[3] for l in lines)
-        if height <= max_height:
+        
+        # حساب الارتفاع الكلي الفعلي للأسطر المقسمة
+        total_height = 0
+        for line in lines:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            line_height = bbox[3] - bbox[1]
+            total_height += line_height + PADDING
+            
+        if total_height - PADDING <= max_height:
             return font, lines
         size -= 1
-    return font, lines
+    return ImageFont.truetype(font_path, 12), lines
 
 # ============================
 # نشر فيسبوك
@@ -148,7 +165,7 @@ def fit_text_to_box(text, draw, font_path, max_width, max_height):
 def post_to_facebook(image_path, title, article, url):
     caption = (
         f"{process_sensitive_text(title)}\n\n"
-        f"{process_sensitive_text(' '.join(article.split()[:40]))}...\n\n"
+        f"{process_sensitive_text(' '.join(clean_html(article).split()[:40]))}...\n\n"
         f"{url}"
     )
 
@@ -169,7 +186,7 @@ def post_to_facebook(image_path, title, article, url):
 def main():
     now = datetime.now()
 
-    # مسموح من 8 صباحًا إلى 1 صباحًا
+    # مسموح من 8 صباحًا إلى 1 صباحًا (اختياري)
     if 1 < now.hour < 8:
         print("⏭ خارج وقت النشر")
         return
@@ -179,50 +196,70 @@ def main():
 
     for entry in feed.entries:
         title = clean_html(entry.title)
-        text = clean_html(entry.summary)
+        summary = clean_html(entry.summary if hasattr(entry, 'summary') else "")
 
-        h = get_hash(title + text)
+        h = get_hash(title + summary)
         if h in posted:
             continue
 
-        bg = Image.open(BG_PATH).convert("RGBA").resize((IMAGE_WIDTH, IMAGE_HEIGHT))
-        img_url = get_article_image(entry)
+        # تجهيز الخلفية
+        try:
+            bg = Image.open(BG_PATH).convert("RGBA").resize((IMAGE_WIDTH, IMAGE_HEIGHT))
+        except Exception as e:
+            print(f"❌ خطأ في تحميل الخلفية: {e}")
+            return
 
+        # تحميل صورة المقال
+        img_url = get_article_image(entry)
         try:
             r = requests.get(img_url, timeout=10)
             article_img = Image.open(BytesIO(r.content)).convert("RGBA")
         except:
             article_img = Image.open(LOGO_PATH).convert("RGBA")
 
+        # تغيير حجم صورة المقال ووضعها في المنتصف
         article_img = article_img.resize(ARTICLE_IMG_SIZE)
-
         base_x = (IMAGE_WIDTH - ARTICLE_IMG_SIZE[0]) // 2
         bg.paste(article_img, (base_x, ARTICLE_IMG_Y), article_img)
 
+        # رسم النص المعالج
         draw = ImageDraw.Draw(bg)
+        processed_title = process_sensitive_text(title)
+        
         font, lines = fit_text_to_box(
-            process_sensitive_text(title),
+            processed_title,
             draw,
             FONT_FILE,
             MAX_WIDTH,
             MAX_HEIGHT
         )
 
-        y = TOP_Y
-        for line in lines:   # ❗ بدون reversed
-            w, h2 = draw.textbbox((0, 0), line, font=font)[2:]
-            x = LEFT_X + (MAX_WIDTH - w) // 2
+        # حساب الارتفاع الكلي لبدء الرسم من المنتصف الرأسي للبوكس أو من الأعلى
+        total_lines_height = sum([draw.textbbox((0, 0), l, font=font)[3] - draw.textbbox((0, 0), l, font=font)[1] for l in lines]) + (len(lines)-1)*PADDING
+        y = TOP_Y + (MAX_HEIGHT - total_lines_height) // 2 # للتوسيط الرأسي داخل المنطقة المحددة
+
+        for line in lines:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            w = bbox[2] - bbox[0]
+            line_h = bbox[3] - bbox[1]
+            
+            x = LEFT_X + (MAX_WIDTH - w) // 2 # توسيط أفقي
             draw.text((x, y), line, font=font, fill="black")
-            y += h2 + PADDING
+            y += line_h + PADDING
 
         output = f"output_{h}.png"
         bg.save(output)
 
-        if post_to_facebook(output, title, text, entry.link):
+        # محاولة النشر
+        if post_to_facebook(output, title, summary, entry.link):
             save_posted(h)
             git_commit()
-            print("✅ تم النشر")
+            print(f"✅ تم النشر بنجاح: {title}")
+            # حذف الصورة بعد النشر لتوفير المساحة
+            if os.path.exists(output): os.remove(output)
             break
+        else:
+            print(f"❌ فشل النشر على فيسبوك.")
 
 # ============================
 if __name__ == "__main__":
