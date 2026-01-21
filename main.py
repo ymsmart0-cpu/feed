@@ -6,7 +6,6 @@ import os
 import re
 import random
 import subprocess
-from io import BytesIO
 
 from wand.image import Image
 from wand.drawing import Drawing
@@ -19,8 +18,8 @@ from bidi.algorithm import get_display
 # الإعدادات العامة
 # ============================
 RSS_URL = "https://qenanews-24.blogspot.com/feeds/posts/default?alt=rss"
-FONT_FILE = "29ltbukrabolditalic.otf"
 
+FONT_FILE = "29ltbukrabolditalic.otf"
 BG_PATH = "BG.png"
 LOGO_PATH = "logo1.png"
 
@@ -35,23 +34,15 @@ FB_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos"
 POSTED_FILE = "posted_articles.txt"
 
 # ============================
-# كلمات حساسة (فيسبوك)
+# كلمات حساسة + فواصل
 # ============================
-SEPARATORS = ["$", "&", "%", "*", "~", "+", "|", "•", "=", "^", ":", "!"]
+SEPARATORS = ["$", "&", "%", "*", "~", "+", "|", "•", "=", "^", ":", "!", "·", "⁃"]
 
 SENSITIVE_WORDS = [
-    # تفاعل مزعج
-    "اشترك","الآن","اضغط","شاهد","فرصة","اربح","مجانا","عرض",
-
-    # عنف ودم
+    "تحرش","تحرشات","اغتصاب","اعتداء","اعتداءات","جنسي","جنسية",
     "قتل","جريمة","ذبح","جثة","دم","دماء","طعن","تفجير","انتحار",
-
-    # تحرش واعتداء
-    "تحرش","اغتصاب","اعتداء","اعتداءات","هتك","خدش","خطف",
-    "اعتداء_جنسي","تحرش_جنسي",
-
-    # كراهية
-    "إرهابي","إرهاب","عنصرية","كراهية"
+    "إرهاب","إرهابي","كراهية","عنصرية",
+    "اشترك","اضغط","الآن","مجانا","عرض","اربح"
 ]
 
 STOP_WORDS = [
@@ -60,13 +51,37 @@ STOP_WORDS = [
 ]
 
 # ============================
-# معالجة الكلمات الحساسة
+# كسر عشوائي للكلمات الحساسة
 # ============================
 def split_sensitive_word(word):
-    if word in SENSITIVE_WORDS:
-        pos = 2 if len(word) >= 4 else 1
-        return word[:pos] + random.choice(SEPARATORS) + word[pos:]
-    return word
+    if word not in SENSITIVE_WORDS:
+        return word
+
+    def m1(w):
+        pos = len(w) // 2
+        return w[:pos] + random.choice(SEPARATORS) + w[pos:]
+
+    def m2(w):
+        repl = {
+            "ا": random.choice(["أ","إ","آ"]),
+            "ي": "ى",
+            "ه": "ة",
+            "و": "ؤ"
+        }
+        for k, v in repl.items():
+            if k in w:
+                return w.replace(k, v, 1)
+        return m1(w)
+
+    def m3(w):
+        pos = len(w) // 2
+        return w[:pos] + " " + w[pos:]
+
+    def m4(w):
+        pos = 1
+        return w[:pos] + random.choice(["·","⁃"]) + w[pos:]
+
+    return random.choice([m1, m2, m3, m4])(word)
 
 def process_sensitive_text(text):
     return " ".join(split_sensitive_word(w) for w in text.split())
@@ -76,17 +91,16 @@ def process_sensitive_text(text):
 # ============================
 def process_arabic_lines(text, max_chars=35):
     words = text.split()
-    lines = []
-    current = []
+    lines, current = [], []
 
-    for word in words:
-        test = " ".join(current + [word])
+    for w in words:
+        test = " ".join(current + [w])
         if len(test) <= max_chars:
-            current.append(word)
+            current.append(w)
         else:
             reshaped = arabic_reshaper.reshape(" ".join(current))
             lines.append(get_display(reshaped))
-            current = [word]
+            current = [w]
 
     if current:
         reshaped = arabic_reshaper.reshape(" ".join(current))
@@ -95,29 +109,31 @@ def process_arabic_lines(text, max_chars=35):
     return lines
 
 # ============================
-# استخراج أول 50 كلمة
+# أول 50 كلمة
 # ============================
 def extract_summary(text, limit=50):
     words = text.split()
-    short = " ".join(words[:limit])
-    return process_sensitive_text(short)
+    return process_sensitive_text(" ".join(words[:limit]))
 
 # ============================
-# استخراج هاشتاجات آمنة
+# هاشتاجات آمنة + ثابت
 # ============================
 def extract_hashtags(text, max_tags=4):
-    words = re.findall(r"[\u0600-\u06FF]{4,}", text)
+    words = re.findall(r"[اأإآء-ي]{4,}", text)
     clean = []
 
     for w in words:
-        if w not in STOP_WORDS and w not in SENSITIVE_WORDS:
+        w = re.sub(r"[^\u0600-\u06FF]", "", w)
+        if w and w not in STOP_WORDS and w not in SENSITIVE_WORDS:
             clean.append(w)
 
     unique = list(dict.fromkeys(clean))
     dynamic = unique[:max_tags]
 
-    hashtags = ["قنا24"] + dynamic
-    return " ".join(f"#{h}" for h in hashtags)
+    tags = ["قنا24"] + dynamic
+    tags = [process_sensitive_text(t) for t in tags]
+
+    return " ".join(f"#{t}" for t in tags)
 
 # ============================
 # MAIN
@@ -144,12 +160,12 @@ def main():
 
         print("🔄 خبر جديد:", raw_title)
 
-        # معالجة النص
+        # كسر النصوص
         safe_title = process_sensitive_text(raw_title)
         safe_summary = extract_summary(raw_text)
         hashtags = extract_hashtags(raw_text)
 
-        # إنشاء الصورة
+        # ===== إنشاء الصورة =====
         with Image(filename=BG_PATH) as canvas:
 
             # صورة الخبر
@@ -168,8 +184,10 @@ def main():
             except:
                 pass
 
-            # رسم العنوان
-            lines = process_arabic_lines(safe_title)
+            # العنوان على الصورة (مكسور + RTL)
+            image_title = process_sensitive_text(raw_title)
+            lines = process_arabic_lines(image_title)
+
             with Drawing() as draw:
                 draw.font = FONT_FILE
                 draw.font_size = 50
@@ -185,14 +203,16 @@ def main():
 
             canvas.save(filename="final.png")
 
-        # كابشن
-        caption = (
+        # ===== الكابشن =====
+        raw_caption = (
             f"{safe_title}\n\n"
             f"{safe_summary}...\n\n"
             f"تابع الخبر كامل هنا 👇\n"
             f"{entry.link}\n\n"
             f"{hashtags}"
         )
+
+        caption = process_sensitive_text(raw_caption)
 
         with open("final.png", "rb") as img:
             res = requests.post(
