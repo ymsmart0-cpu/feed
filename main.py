@@ -34,14 +34,14 @@ FB_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos"
 POSTED_FILE = "posted_articles.txt"
 
 # ============================
-# كلمات حساسة + فواصل
+# كلمات حساسة + رموز كسر
 # ============================
-SEPARATORS = ["$", "&", "%", "*", "~", "+", "|", "•", "=", "^", ":", "!", "·", "⁃"]
+SEPARATORS = ["$", "•", "~", "+", "|", "=", "^", ":", "!", "·", "⁃"]
 
 SENSITIVE_WORDS = [
-    "تحرش","تحرشات","اغتصاب","اعتداء","اعتداءات","جنسي","جنسية",
+    "تحرش","اغتصاب","اعتداء","جنسي","جنسية","هتك",
     "قتل","جريمة","ذبح","جثة","دم","دماء","طعن","تفجير","انتحار",
-    "إرهاب","إرهابي","كراهية","عنصرية",
+    "إرهاب","إرهابي","عنصرية","كراهية",
     "اشترك","اضغط","الآن","مجانا","عرض","اربح"
 ]
 
@@ -51,37 +51,15 @@ STOP_WORDS = [
 ]
 
 # ============================
-# كسر عشوائي للكلمات الحساسة
+# كسر الكلمات الحساسة (رمز فقط)
 # ============================
 def split_sensitive_word(word):
     if word not in SENSITIVE_WORDS:
         return word
 
-    def m1(w):
-        pos = len(w) // 2
-        return w[:pos] + random.choice(SEPARATORS) + w[pos:]
-
-    def m2(w):
-        repl = {
-            "ا": random.choice(["أ","إ","آ"]),
-            "ي": "ى",
-            "ه": "ة",
-            "و": "ؤ"
-        }
-        for k, v in repl.items():
-            if k in w:
-                return w.replace(k, v, 1)
-        return m1(w)
-
-    def m3(w):
-        pos = len(w) // 2
-        return w[:pos] + " " + w[pos:]
-
-    def m4(w):
-        pos = 1
-        return w[:pos] + random.choice(["·","⁃"]) + w[pos:]
-
-    return random.choice([m1, m2, m3, m4])(word)
+    symbol = random.choice(SEPARATORS)
+    pos = len(word) // 2
+    return word[:pos] + symbol + word[pos:]
 
 def process_sensitive_text(text):
     return " ".join(split_sensitive_word(w) for w in text.split())
@@ -109,14 +87,15 @@ def process_arabic_lines(text, max_chars=35):
     return lines
 
 # ============================
-# أول 50 كلمة
+# استخراج أول 50 كلمة
 # ============================
 def extract_summary(text, limit=50):
     words = text.split()
-    return process_sensitive_text(" ".join(words[:limit]))
+    short = " ".join(words[:limit])
+    return process_sensitive_text(short)
 
 # ============================
-# هاشتاجات آمنة + ثابت
+# استخراج هاشتاجات آمنة
 # ============================
 def extract_hashtags(text, max_tags=4):
     words = re.findall(r"[اأإآء-ي]{4,}", text)
@@ -160,7 +139,7 @@ def main():
 
         print("🔄 خبر جديد:", raw_title)
 
-        # كسر النصوص
+        # معالجة النصوص
         safe_title = process_sensitive_text(raw_title)
         safe_summary = extract_summary(raw_text)
         hashtags = extract_hashtags(raw_text)
@@ -168,7 +147,6 @@ def main():
         # ===== إنشاء الصورة =====
         with Image(filename=BG_PATH) as canvas:
 
-            # صورة الخبر
             try:
                 match = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
                 if match:
