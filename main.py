@@ -18,6 +18,27 @@ RSS_URL = "https://qenanews-24.blogspot.com/feeds/posts/default?alt=rss"
 # استخدام الخط الجديد الذي حددته
 FONT_FILE = "29ltbukrabolditalic.otf" 
 
+# ============================
+# كلمات حساسة
+# ============================
+SEPARATORS = ["$", "&", "%", "*", "~", "+", "|", "•", "=", "^", ":", "!"]
+
+SENSITIVE_WORDS = [
+    "اشترك","الآن","اضغط","شاهد","فرصة","اربح","مجانا","عرض","تفوت","الفرصة",
+    "قتل","جريمة","ذبح","جثة","دم","دماء","اغتصاب","تعذيب","طعن","تفجير","انتحار"
+]
+
+def split_sensitive_word(word):
+    if word in SENSITIVE_WORDS:
+        pos = 2 if len(word) >= 3 else 1
+        return word[:pos] + random.choice(SEPARATORS) + word[pos:]
+    return word
+
+def process_sensitive_text(text):
+    return " ".join(split_sensitive_word(w) for w in text.split())
+
+
+
 # إحداثيات الرسم (تأكد أن المسارات صحيحة في مستودعك)
 CENTER_X = 540
 START_Y = 780 
