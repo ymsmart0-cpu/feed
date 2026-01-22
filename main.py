@@ -18,56 +18,212 @@ from bidi.algorithm import get_display
 # الإعدادات العامة
 # ============================
 RSS_URL = "https://qenanews-24.blogspot.com/feeds/posts/default?alt=rss"
-
 FONT_FILE = "29ltbukrabolditalic.otf"
-BG_PATH = "BG.png"
-LOGO_PATH = "logo1.png"
 
-CENTER_X = 540
-START_Y = 780
-LINE_HEIGHT = 75
+BG_IMAGE = "BG.png"
+LOGO_IMAGE = "logo1.png"
+
+# حدود النص
+TEXT_LEFT = 110
+TEXT_RIGHT = 960
+TEXT_TOP = 725
+TEXT_BOTTOM = 880
+
+MAX_WIDTH = TEXT_RIGHT - TEXT_LEFT
+MAX_HEIGHT = TEXT_BOTTOM - TEXT_TOP
+
+CENTER_X = TEXT_LEFT + MAX_WIDTH // 2
+LINE_HEIGHT = 70
+
+POSTED_FILE = "posted_articles.txt"
 
 PAGE_ID = os.getenv("PAGE_ID", "").strip()
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "").strip()
 FB_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos"
 
-POSTED_FILE = "posted_articles.txt"
+# ============================
+# كلمات حساسة
+# ============================
+SEPARATORS = ["$", "•", "~", "+", "|", "=", "^", "!", "·", "⁃"]
 
-# ============================
-# كلمات حساسة + رموز كسر
-# ============================
-SEPARATORS = ["$", "•", "~", "+", "|", "=", "^", ":", "!", "·", "⁃"]
+def break_word_inside(word):
+    """
+    يكسر أي كلمة حساسة حتى لو كانت ملتصقة بحروف قبلها أو بعدها
+    مثال: بالتحرش → بالتحر•ش
+    """
+    for sensitive in SENSITIVE_WORDS:
+        if sensitive in word:
+            symbol = random.choice(SEPARATORS)
+            pos = len(sensitive) // 2
+            broken = sensitive[:pos] + symbol + sensitive[pos:]
+            return word.replace(sensitive, broken, 1)
+    return word
+
+def process_sensitive_text(text, limit_once=False):
+    words = text.split()
+    used = False
+    result = []
+
+    for w in words:
+        has_sensitive = any(s in w for s in SENSITIVE_WORDS)
+
+        if has_sensitive and (not used or not limit_once):
+            result.append(break_word_inside(w))
+            used = True
+        else:
+            result.append(w)
+
+    return " ".join(result)
 
 SENSITIVE_WORDS = [
-    "تحرش","اغتصاب","اعتداء","جنسي","جنسية","هتك",
-    "قتل","جريمة","ذبح","جثة","دم","دماء","طعن","تفجير","انتحار",
-    "إرهاب","إرهابي","عنصرية","كراهية",
-    "اشترك","اضغط","الآن","مجانا","عرض","اربح"
+
+    # ===== جرائم وعنف =====
+    "قتل","مقتل","قتيل","يقتل","قتلته",
+    "جريمة","جرائم","مجرم",
+    "ذبح","مذبوح",
+    "طعن","مطعون",
+    "ضرب","اعتداء","اعتداءات",
+    "عنف","تعذيب",
+    "دم","دماء","نزيف",
+    "سلاح","أسلحة","سلاح أبيض","سكين","مطواة",
+    "إطلاق نار","رصاص","طلقات",
+    "تفجير","انفجار","قنبلة",
+    "اختطاف","خطف","مخطوف",
+    "سرقة","سطو","نهب",
+    "تهديد","ابتزاز",
+
+    # ===== اعتداءات جنسية =====
+    "تحرش","التحرش","تحرش جنسي",
+    "اعتداء جنسي","اعتداءات جنسية",
+    "اغتصاب","مغتصب",
+    "هتك عرض",
+    "انتهاك","انتهاك جسدي",
+    "استغلال جنسي",
+    "تحريض جنسي",
+
+    # ===== أطفال وقُصَّر (حساسة جدًا) =====
+    "طفلة","طفل","قاصر","قاصرة",
+    "الاعتداء على طفل",
+    "التحرش بالأطفال",
+    "استغلال الأطفال",
+
+    # ===== انتحار وإيذاء النفس =====
+    "انتحار","انتحر","ينتحر",
+    "إيذاء النفس","أذى النفس",
+    "شنق","شنق نفسه",
+    "تناول سُم","جرعة زائدة",
+
+    # ===== إرهاب وتطرف =====
+    "إرهاب","إرهابي","تفجير إرهابي",
+    "تنظيم إرهابي","داعش",
+    "تفجيرات","عمليات إرهابية",
+
+    # ===== ألفاظ جنسية مباشرة =====
+    "جنس","جنسية","علاقة جنسية",
+    "إباحية","مواد إباحية",
+    "ممارسة جنسية",
+
+    # ===== تحريض وكراهية =====
+    "عنصرية","كراهية","خطاب كراهية",
+    "تحريض","تحريض على العنف",
+    "سب","إهانة","تشهير",
+
+    # ===== مخدرات =====
+    "مخدرات","مخدر","حشيش","بانجو",
+    "هيروين","كوكايين","ترامادول",
+    "تعاطي","ترويج مخدرات",
+
+    # ===== قضايا حساسة قانونيًا =====
+    "فساد","رشوة","اختلاس",
+    "تزوير","تزوير أوراق",
+    "غسيل أموال"
 ]
 
-STOP_WORDS = [
-    "هذا","هذه","ذلك","التي","الذي","على","في","من","إلى","عن",
-    "مع","كان","كما","بعد","قبل","بين","أمام","خلال"
-]
-
-# ============================
-# كسر الكلمات الحساسة (رمز فقط)
-# ============================
 def split_sensitive_word(word):
     if word not in SENSITIVE_WORDS:
         return word
-
     symbol = random.choice(SEPARATORS)
     pos = len(word) // 2
     return word[:pos] + symbol + word[pos:]
 
-def process_sensitive_text(text):
-    return " ".join(split_sensitive_word(w) for w in text.split())
+def process_sensitive_text(text, limit_once=False):
+    words = text.split()
+    used = False
+    out = []
+    for w in words:
+        if w in SENSITIVE_WORDS and (not used or not limit_once):
+            out.append(split_sensitive_word(w))
+            used = True
+        else:
+            out.append(w)
+    return " ".join(out)
 
 # ============================
-# معالجة النص العربي RTL
+# الأماكن والهاشتاجات
 # ============================
-def process_arabic_lines(text, max_chars=35):
+PLACES = [
+    # محافظات مصر
+    "القاهرة","الجيزة","الإسكندرية","الدقهلية","الشرقية","القليوبية",
+    "كفر الشيخ","الغربية","المنوفية","البحيرة","دمياط",
+    "بورسعيد","الإسماعيلية","السويس",
+    "الفيوم","بني سويف","المنيا","أسيوط","سوهاج","قنا","الأقصر","أسوان",
+    "البحر الأحمر","الوادي الجديد","مطروح","شمال سيناء","جنوب سيناء",
+
+    # محافظة قنا
+    "مدينة قنا","مركز قنا",
+    "نجع حمادي","مركز نجع حمادي",
+    "دشنا","مركز دشنا",
+    "قفط","مركز قفط",
+    "قوص","مركز قوص",
+    "أبو تشت","مركز أبو تشت",
+    "فرشوط","مركز فرشوط",
+    "نقادة","مركز نقادة",
+    "الوقف","مركز الوقف"
+]
+
+GOV_ENTITIES = [
+    "النيابة العامة","وزارة الداخلية","وزارة العدل",
+    "محكمة","الشرطة","الأجهزة الأمنية"
+]
+
+SECTIONS = {
+    "قضائي": ["محكمة","النيابة","حكم","قضت"],
+    "أمني": ["القبض","الأمن","الشرطة","تفتيش"],
+    "تعليمي": ["مدرس","طلاب","تعليم","مدرسة"],
+    "رياضي": ["مباراة","لاعب","نادي","بطولة"]
+}
+
+def detect_section(text):
+    for sec, keys in SECTIONS.items():
+        for k in keys:
+            if k in text:
+                return sec
+    return "أخبار"
+
+def normalize_hashtag(text):
+    return text.replace(" ", "_")
+
+def extract_safe_hashtags(text):
+    tags = ["قنا24"]
+
+    for p in PLACES:
+        if p in text:
+            tags.append(normalize_hashtag(p))
+            break
+
+    for g in GOV_ENTITIES:
+        if g in text:
+            tags.append(normalize_hashtag(g))
+            break
+
+    tags.append(normalize_hashtag(detect_section(text)))
+
+    return " ".join(f"#{t}" for t in tags)
+
+# ============================
+# تجهيز النص العربي للصورة
+# ============================
+def prepare_arabic_lines(text, max_chars=40):
     words = text.split()
     lines, current = [], []
 
@@ -86,42 +242,20 @@ def process_arabic_lines(text, max_chars=35):
 
     return lines
 
-# ============================
-# استخراج أول 50 كلمة
-# ============================
-def extract_summary(text, limit=50):
-    words = text.split()
-    short = " ".join(words[:limit])
-    return process_sensitive_text(short)
+def fit_text_to_box(text):
+    font_size = 52
+    while font_size >= 24:
+        lines = prepare_arabic_lines(text)
+        total_height = len(lines) * LINE_HEIGHT
+        if total_height <= MAX_HEIGHT:
+            return lines, font_size
+        font_size -= 2
+    return lines, font_size
 
 # ============================
-# استخراج هاشتاجات آمنة
-# ============================
-def extract_hashtags(text, max_tags=4):
-    words = re.findall(r"[اأإآء-ي]{4,}", text)
-    clean = []
-
-    for w in words:
-        w = re.sub(r"[^\u0600-\u06FF]", "", w)
-        if w and w not in STOP_WORDS and w not in SENSITIVE_WORDS:
-            clean.append(w)
-
-    unique = list(dict.fromkeys(clean))
-    dynamic = unique[:max_tags]
-
-    tags = ["قنا24"] + dynamic
-    tags = [process_sensitive_text(t) for t in tags]
-
-    return " ".join(f"#{t}" for t in tags)
-
-# ============================
-# MAIN
+# التنفيذ الرئيسي
 # ============================
 def main():
-    if not PAGE_ID or not PAGE_ACCESS_TOKEN:
-        print("❌ بيانات فيسبوك غير موجودة")
-        return
-
     feed = feedparser.parse(RSS_URL)
 
     posted = []
@@ -131,48 +265,52 @@ def main():
 
     for entry in feed.entries:
         raw_title = re.sub("<.*?>", "", entry.title).strip()
-        raw_text = re.sub("<.*?>", "", entry.summary).strip()
+        raw_summary = re.sub("<.*?>", "", entry.summary).strip()
 
-        h = hashlib.md5((raw_title + raw_text).encode("utf-8")).hexdigest()
+        h = hashlib.md5(raw_title.encode("utf-8")).hexdigest()
         if h in posted:
             continue
 
-        print("🔄 خبر جديد:", raw_title)
+        title = process_sensitive_text(raw_title, limit_once=True)
+        summary = process_sensitive_text(raw_summary)
 
-        # معالجة النصوص
-        safe_title = process_sensitive_text(raw_title)
-        safe_summary = extract_summary(raw_text)
-        hashtags = extract_hashtags(raw_text)
+        first_50 = " ".join(summary.split()[:50])
 
-        # ===== إنشاء الصورة =====
-        with Image(filename=BG_PATH) as canvas:
+        caption = (
+            f"{title}\n\n"
+            f"{first_50}...\n\n"
+            f"تابع الخبر كامل هنا 👇\n{entry.link}\n\n"
+            f"{extract_safe_hashtags(raw_title)}"
+        )
+
+        with Image(filename=BG_IMAGE) as canvas:
 
             try:
                 match = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
                 if match:
                     r = requests.get(match.group(1), timeout=10)
-                    with Image(blob=r.content) as img:
-                        img.transform(resize='855x460^')
-                        img.extent(width=855, height=460)
-                        canvas.composite(img, left=112, top=185)
+                    with Image(blob=r.content) as art:
+                        art.transform(resize='855x460^')
+                        art.extent(855, 460)
+                        canvas.composite(art, 112, 185)
                 else:
-                    with Image(filename=LOGO_PATH) as logo:
+                    with Image(filename=LOGO_IMAGE) as logo:
                         logo.resize(855, 460)
-                        canvas.composite(logo, left=112, top=185)
+                        canvas.composite(logo, 112, 185)
             except:
                 pass
 
-            # العنوان على الصورة (مكسور + RTL)
-            image_title = process_sensitive_text(raw_title)
-            lines = process_arabic_lines(image_title)
+            lines, font_size = fit_text_to_box(title)
+            total_h = len(lines) * LINE_HEIGHT
+            start_y = TEXT_TOP + (MAX_HEIGHT - total_h) // 2
 
             with Drawing() as draw:
                 draw.font = FONT_FILE
-                draw.font_size = 50
+                draw.font_size = font_size
                 draw.fill_color = Color("black")
                 draw.text_alignment = "center"
 
-                y = START_Y
+                y = start_y
                 for line in lines:
                     draw.text(CENTER_X, y, line)
                     y += LINE_HEIGHT
@@ -180,17 +318,6 @@ def main():
                 draw(canvas)
 
             canvas.save(filename="final.png")
-
-        # ===== الكابشن =====
-        raw_caption = (
-            f"{safe_title}\n\n"
-            f"{safe_summary}...\n\n"
-            f"تابع الخبر كامل هنا 👇\n"
-            f"{entry.link}\n\n"
-            f"{hashtags}"
-        )
-
-        caption = process_sensitive_text(raw_caption)
 
         with open("final.png", "rb") as img:
             res = requests.post(
@@ -200,17 +327,17 @@ def main():
             )
 
         if res.status_code == 200:
-            print("✅ تم النشر")
             with open(POSTED_FILE, "a", encoding="utf-8") as f:
                 f.write(h + "\n")
 
             subprocess.run(["git", "config", "--global", "user.name", "Bot"])
             subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
             subprocess.run(["git", "add", POSTED_FILE])
-            subprocess.run(["git", "commit", "-m", "Update posted articles"], check=False)
+            subprocess.run(["git", "commit", "-m", "update posted articles"], check=False)
             subprocess.run(["git", "push"], check=False)
+
+            print("✅ تم النشر بنجاح")
             break
 
-# ============================
 if __name__ == "__main__":
     main()
