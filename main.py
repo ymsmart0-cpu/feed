@@ -121,7 +121,7 @@ def normalize_hashtag(text):
     return text.replace(" ", "_")
 
 def extract_safe_hashtags(text):
-    tags = ["قنا24"]
+    tags = ["قنا_نيوز_24"]
     for p in PLACES:
         if p in text:
             tags.append(normalize_hashtag(p))
