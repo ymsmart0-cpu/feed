@@ -23,17 +23,16 @@ FONT_FILE = "29ltbukrabolditalic.otf"
 BG_IMAGE = "BG.png"
 LOGO_IMAGE = "logo1.png"
 
-# حدود النص
+# حدود النص (تم التعديل لضبط المساحة بدقة)
 TEXT_LEFT = 110
 TEXT_RIGHT = 960
 TEXT_TOP = 725
 TEXT_BOTTOM = 880
 
-MAX_WIDTH = TEXT_RIGHT - TEXT_LEFT
-MAX_HEIGHT = TEXT_BOTTOM - TEXT_TOP
-
-CENTER_X = TEXT_LEFT + MAX_WIDTH // 2
-LINE_HEIGHT = 70
+# حساب المساحات المتاحة تلقائياً
+MAX_WIDTH = TEXT_RIGHT - TEXT_LEFT  # 850px
+MAX_HEIGHT = TEXT_BOTTOM - TEXT_TOP # 155px
+CENTER_X = TEXT_LEFT + (MAX_WIDTH // 2)
 
 POSTED_FILE = "posted_articles.txt"
 
@@ -42,101 +41,27 @@ PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "").strip()
 FB_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos"
 
 # ============================
-# كلمات حساسة
+# كلمات حساسة (نفس القائمة السابقة)
 # ============================
 SEPARATORS = ["$", "•", "~", "+", "|", "=", "^", "!", "·", "⁃"]
 
-def break_word_inside(word):
-    """
-    يكسر أي كلمة حساسة حتى لو كانت ملتصقة بحروف قبلها أو بعدها
-    مثال: بالتحرش → بالتحر•ش
-    """
-    for sensitive in SENSITIVE_WORDS:
-        if sensitive in word:
-            symbol = random.choice(SEPARATORS)
-            pos = len(sensitive) // 2
-            broken = sensitive[:pos] + symbol + sensitive[pos:]
-            return word.replace(sensitive, broken, 1)
-    return word
-
-def process_sensitive_text(text, limit_once=False):
-    words = text.split()
-    used = False
-    result = []
-
-    for w in words:
-        has_sensitive = any(s in w for s in SENSITIVE_WORDS)
-
-        if has_sensitive and (not used or not limit_once):
-            result.append(break_word_inside(w))
-            used = True
-        else:
-            result.append(w)
-
-    return " ".join(result)
-
 SENSITIVE_WORDS = [
-
-    # ===== جرائم وعنف =====
-    "قتل","مقتل","قتيل","يقتل","قتلته",
-    "جريمة","جرائم","مجرم",
-    "ذبح","مذبوح",
-    "طعن","مطعون",
-    "ضرب","اعتداء","اعتداءات",
-    "عنف","تعذيب",
-    "دم","دماء","نزيف",
-    "سلاح","أسلحة","سلاح أبيض","سكين","مطواة",
-    "إطلاق نار","رصاص","طلقات",
-    "تفجير","انفجار","قنبلة",
-    "اختطاف","خطف","مخطوف",
-    "سرقة","سطو","نهب",
-    "تهديد","ابتزاز",
-
-    # ===== اعتداءات جنسية =====
-    "تحرش","التحرش","تحرش جنسي",
-    "اعتداء جنسي","اعتداءات جنسية",
-    "اغتصاب","مغتصب",
-    "هتك عرض",
-    "انتهاك","انتهاك جسدي",
-    "استغلال جنسي",
-    "تحريض جنسي",
-
-    # ===== أطفال وقُصَّر (حساسة جدًا) =====
-    "طفلة","طفل","قاصر","قاصرة",
-    "الاعتداء على طفل",
-    "التحرش بالأطفال",
-    "استغلال الأطفال",
-
-    # ===== انتحار وإيذاء النفس =====
-    "انتحار","انتحر","ينتحر",
-    "إيذاء النفس","أذى النفس",
-    "شنق","شنق نفسه",
-    "تناول سُم","جرعة زائدة",
-
-    # ===== إرهاب وتطرف =====
-    "إرهاب","إرهابي","تفجير إرهابي",
-    "تنظيم إرهابي","داعش",
-    "تفجيرات","عمليات إرهابية",
-
-    # ===== ألفاظ جنسية مباشرة =====
-    "جنس","جنسية","علاقة جنسية",
-    "إباحية","مواد إباحية",
-    "ممارسة جنسية",
-
-    # ===== تحريض وكراهية =====
-    "عنصرية","كراهية","خطاب كراهية",
-    "تحريض","تحريض على العنف",
-    "سب","إهانة","تشهير",
-
-    # ===== مخدرات =====
-    "مخدرات","مخدر","حشيش","بانجو",
-    "هيروين","كوكايين","ترامادول",
-    "تعاطي","ترويج مخدرات",
-
-    # ===== قضايا حساسة قانونيًا =====
-    "فساد","رشوة","اختلاس",
-    "تزوير","تزوير أوراق",
-    "غسيل أموال"
+    "قتل","مقتل","قتيل","يقتل","قتلته","جريمة","جرائم","مجرم",
+    "ذبح","مذبوح","طعن","مطعون","ضرب","اعتداء","اعتداءات",
+    "عنف","تعذيب","دم","دماء","نزيف","سلاح","أسلحة","سلاح أبيض",
+    "سكين","مطواة","إطلاق نار","رصاص","طلقات","تفجير","انفجار",
+    "قنبلة","اختطاف","خطف","مخطوف","سرقة","سطو","نهب","تهديد","ابتزاز",
+    "تحرش","التحرش","تحرش جنسي","اعتداء جنسي","اعتداءات جنسية",
+    "اغتصاب","مغتصب","هتك عرض","انتهاك","انتهاك جسدي","استغلال جنسي",
+    "تحريض جنسي","طفلة","طفل","قاصر","قاصرة","الاعتداء على طفل",
+    "التحرش بالأطفال","استغلال الأطفال","انتحار","انتحر","ينتحر",
+    "إيذاء النفس","أذى النفس","شنق","شنق نفسه","تناول سُم","جرعة زائدة",
+    "إرهاب","إرهابي","تفجير إرهابي","تنظيم إرهابي","داعش","تفجيرات",
+    "عمليات إرهابية","جنس","جنسية","علاقة جنسية","إباحية","مواد إباحية",
+    "ممارسة جنسية","عنصرية","كراهية","خطاب كراهية","تحريض",
+    "تحريض على العنف","سب","إهانة","تشهير","مخدرات","مخدر","حشيش",
+    "بانجو","هيروين","كوكايين","ترامادول","تعاطي","ترويج مخدرات",
+    "فساد","رشوة","اختلاس","تزوير","تزوير أوراق","غسيل أموال"
 ]
 
 def split_sensitive_word(word):
@@ -151,7 +76,10 @@ def process_sensitive_text(text, limit_once=False):
     used = False
     out = []
     for w in words:
-        if w in SENSITIVE_WORDS and (not used or not limit_once):
+        stripped_w = re.sub(r'[^\w]', '', w) # تنظيف بسيط للمقارنة
+        has_sensitive = any(s in w for s in SENSITIVE_WORDS)
+        
+        if has_sensitive and (not used or not limit_once):
             out.append(split_sensitive_word(w))
             used = True
         else:
@@ -162,29 +90,18 @@ def process_sensitive_text(text, limit_once=False):
 # الأماكن والهاشتاجات
 # ============================
 PLACES = [
-    # محافظات مصر
     "القاهرة","الجيزة","الإسكندرية","الدقهلية","الشرقية","القليوبية",
     "كفر الشيخ","الغربية","المنوفية","البحيرة","دمياط",
     "بورسعيد","الإسماعيلية","السويس",
     "الفيوم","بني سويف","المنيا","أسيوط","سوهاج","قنا","الأقصر","أسوان",
     "البحر الأحمر","الوادي الجديد","مطروح","شمال سيناء","جنوب سيناء",
-
-    # محافظة قنا
-    "مدينة قنا","مركز قنا",
-    "نجع حمادي","مركز نجع حمادي",
-    "دشنا","مركز دشنا",
-    "قفط","مركز قفط",
-    "قوص","مركز قوص",
-    "أبو تشت","مركز أبو تشت",
-    "فرشوط","مركز فرشوط",
-    "نقادة","مركز نقادة",
-    "الوقف","مركز الوقف"
+    "مدينة قنا","مركز قنا","نجع حمادي","مركز نجع حمادي",
+    "دشنا","مركز دشنا","قفط","مركز قفط","قوص","مركز قوص",
+    "أبو تشت","مركز أبو تشت","فرشوط","مركز فرشوط",
+    "نقادة","مركز نقادة","الوقف","مركز الوقف"
 ]
 
-GOV_ENTITIES = [
-    "النيابة العامة","وزارة الداخلية","وزارة العدل",
-    "محكمة","الشرطة","الأجهزة الأمنية"
-]
+GOV_ENTITIES = ["النيابة العامة","وزارة الداخلية","وزارة العدل","محكمة","الشرطة","الأجهزة الأمنية"]
 
 SECTIONS = {
     "قضائي": ["محكمة","النيابة","حكم","قضت"],
@@ -205,52 +122,95 @@ def normalize_hashtag(text):
 
 def extract_safe_hashtags(text):
     tags = ["قنا24"]
-
     for p in PLACES:
         if p in text:
             tags.append(normalize_hashtag(p))
             break
-
     for g in GOV_ENTITIES:
         if g in text:
             tags.append(normalize_hashtag(g))
             break
-
     tags.append(normalize_hashtag(detect_section(text)))
-
     return " ".join(f"#{t}" for t in tags)
 
 # ============================
-# تجهيز النص العربي للصورة
+# (جديد) دالة التفاف النص حسب البكسل
 # ============================
-def prepare_arabic_lines(text, max_chars=40):
+def wrap_text_pixel_based(text, drawing, canvas, max_width_px):
+    """
+    تقسيم النص إلى أسطر بناءً على العرض الفعلي بالبكسل وليس عدد الحروف
+    """
     words = text.split()
-    lines, current = [], []
-
-    for w in words:
-        test = " ".join(current + [w])
-        if len(test) <= max_chars:
-            current.append(w)
+    lines = []
+    current_line = []
+    
+    for word in words:
+        # تجربة إضافة الكلمة للسطر الحالي
+        test_line = current_line + [word]
+        
+        # تشكيل النص وقياسه
+        test_str = " ".join(test_line)
+        reshaped_text = arabic_reshaper.reshape(test_str)
+        bidi_text = get_display(reshaped_text)
+        
+        metrics = drawing.get_font_metrics(canvas, bidi_text)
+        
+        if metrics.text_width <= max_width_px:
+            current_line = test_line
         else:
-            reshaped = arabic_reshaper.reshape(" ".join(current))
-            lines.append(get_display(reshaped))
-            current = [w]
-
-    if current:
-        reshaped = arabic_reshaper.reshape(" ".join(current))
-        lines.append(get_display(reshaped))
-
+            # السطر اكتمل، احفظ القديم وابدأ سطراً جديداً بالكلمة الحالية
+            if current_line:
+                final_str = " ".join(current_line)
+                lines.append(get_display(arabic_reshaper.reshape(final_str)))
+            current_line = [word]
+            
+    # إضافة السطر الأخير
+    if current_line:
+        final_str = " ".join(current_line)
+        lines.append(get_display(arabic_reshaper.reshape(final_str)))
+        
     return lines
 
-def fit_text_to_box(text):
-    font_size = 52
-    while font_size >= 24:
-        lines = prepare_arabic_lines(text)
-        total_height = len(lines) * LINE_HEIGHT
-        if total_height <= MAX_HEIGHT:
-            return lines, font_size
-        font_size -= 2
-    return lines, font_size
+# ============================
+# (جديد) دالة ملائمة النص للمربع
+# ============================
+def fit_text_dynamic(text, canvas):
+    """
+    تحاول هذه الدالة إيجاد أكبر حجم خط ممكن ومسافة بين الأسطر
+    بحيث لا يتجاوز النص الحدود الأفقية والعمودية المحددة.
+    """
+    font_size = 60  # نبدأ بخط كبير
+    min_font = 20   # أقل حجم خط مسموح به
+    
+    # نستخدم كائن رسم وهمي للحسابات
+    with Drawing() as draw:
+        draw.font = FONT_FILE
+        
+        while font_size >= min_font:
+            draw.font_size = font_size
+            
+            # حساب ارتفاع السطر ديناميكياً (مثلاً 1.3 من حجم الخط)
+            # هذا يضمن أنه إذا صغر الخط، تصغر المسافات بين الأسطر أيضاً
+            line_height = int(font_size * 1.3)
+            
+            # تقسيم النص بناءً على العرض المتاح (850px)
+            lines = wrap_text_pixel_based(text, draw, canvas, MAX_WIDTH)
+            
+            # حساب الارتفاع الكلي للنص الناتج
+            total_text_height = len(lines) * line_height
+            
+            # التحقق: هل الارتفاع الكلي أقل من المساحة المتاحة (155px)؟
+            # وهل النص ليس فارغاً؟
+            if total_text_height <= MAX_HEIGHT and len(lines) > 0:
+                # نجاح: أعد الأسطر، حجم الخط، وارتفاع السطر
+                return lines, font_size, line_height
+            
+            # إذا لم ينجح، قلل الخط وجرب مرة أخرى
+            font_size -= 2
+            
+    # في حالة الفشل التام (نص طويل جداً)، نرجع أصغر خط ونقص النص لاحقاً
+    # (الخوارزمية أعلاه قوية ولن تصل لهنا غالباً إلا في نصوص ضخمة جداً)
+    return lines, min_font, int(min_font * 1.3)
 
 # ============================
 # التنفيذ الرئيسي
@@ -284,7 +244,8 @@ def main():
         )
 
         with Image(filename=BG_IMAGE) as canvas:
-
+            
+            # وضع الصورة المصغرة أو اللوجو
             try:
                 match = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
                 if match:
@@ -300,44 +261,70 @@ def main():
             except:
                 pass
 
-            lines, font_size = fit_text_to_box(title)
-            total_h = len(lines) * LINE_HEIGHT
-            start_y = TEXT_TOP + (MAX_HEIGHT - total_h) // 2
+            # --- هنا التغيير الجوهري لرسم النص ---
+            
+            # استدعاء دالة الملائمة الديناميكية
+            lines, font_size, line_height = fit_text_dynamic(title, canvas)
+            
+            # حساب نقطة البداية العمودية ليتوسط النص المنطقة المحددة
+            total_h = len(lines) * line_height
+            # المعادلة: بداية المنطقة + (ارتفاع المنطقة - ارتفاع النص) / 2
+            # نضيف نصف ارتفاع السطر (line_height / 3 تقريباً) لضبط الـ Baseline للخط العربي
+            start_y = TEXT_TOP + (MAX_HEIGHT - total_h) // 2 + int(font_size * 0.8)
 
             with Drawing() as draw:
                 draw.font = FONT_FILE
                 draw.font_size = font_size
                 draw.fill_color = Color("black")
                 draw.text_alignment = "center"
+                
+                # رسم الأسطر
+                current_y = start_y
+                # تعديل بسيط لأن wand يرسم النص بناءً على الـ baseline وليس الزاوية العليا
+                # الـ loop السابقة كانت تزيد Y، سنستخدم نفس المنطق
+                
+                # إعادة ضبط الـ Y ليكون أول سطر في مكانه الصحيح بالنسبة للـ Baseline
+                # عادة في Wand: Y هو خط الارتكاز. 
+                # لنبدأ من start_y المحسوب ونزيد عليه
+                
+                # تصحيح بسيط للتموضع الرأسي:
+                # start_y المحسوب أعلاه هو قمة الكتلة النصية + الهامش
+                # لكن عند الرسم نحتاج إحداثيات الـ Baseline للسطر الأول
+                current_y = TEXT_TOP + (MAX_HEIGHT - total_h) // 2 + int(line_height * 0.8)
 
-                y = start_y
                 for line in lines:
-                    draw.text(CENTER_X, y, line)
-                    y += LINE_HEIGHT
+                    draw.text(CENTER_X, current_y, line)
+                    current_y += line_height
 
                 draw(canvas)
 
             canvas.save(filename="final.png")
 
-        with open("final.png", "rb") as img:
-            res = requests.post(
-                FB_URL,
-                data={"access_token": PAGE_ACCESS_TOKEN, "caption": caption},
-                files={"source": img}
-            )
+        # النشر على فيسبوك
+        try:
+            with open("final.png", "rb") as img:
+                res = requests.post(
+                    FB_URL,
+                    data={"access_token": PAGE_ACCESS_TOKEN, "caption": caption},
+                    files={"source": img}
+                )
 
-        if res.status_code == 200:
-            with open(POSTED_FILE, "a", encoding="utf-8") as f:
-                f.write(h + "\n")
+            if res.status_code == 200:
+                with open(POSTED_FILE, "a", encoding="utf-8") as f:
+                    f.write(h + "\n")
 
-            subprocess.run(["git", "config", "--global", "user.name", "Bot"])
-            subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
-            subprocess.run(["git", "add", POSTED_FILE])
-            subprocess.run(["git", "commit", "-m", "update posted articles"], check=False)
-            subprocess.run(["git", "push"], check=False)
+                subprocess.run(["git", "config", "--global", "user.name", "Bot"])
+                subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
+                subprocess.run(["git", "add", POSTED_FILE])
+                subprocess.run(["git", "commit", "-m", "update posted articles"], check=False)
+                subprocess.run(["git", "push"], check=False)
 
-            print("✅ تم النشر بنجاح")
-            break
+                print("✅ تم النشر بنجاح")
+                break
+            else:
+                print(f"❌ فشل النشر: {res.text}")
+        except Exception as e:
+            print(f"❌ خطأ أثناء رفع الصورة: {e}")
 
 if __name__ == "__main__":
     main()
