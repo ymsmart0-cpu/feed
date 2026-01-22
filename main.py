@@ -6,7 +6,6 @@ import os
 import re
 import random
 import subprocess
-import json
 
 from wand.image import Image
 from wand.drawing import Drawing
@@ -24,7 +23,7 @@ FONT_FILE = "29ltbukrabolditalic.otf"
 BG_IMAGE = "BG.png"
 LOGO_IMAGE = "logo1.png"
 
-# حدود النص
+# حدود النص (تم التعديل لضبط المساحة بدقة)
 TEXT_LEFT = 110
 TEXT_RIGHT = 960
 TEXT_TOP = 725
@@ -42,7 +41,7 @@ PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "").strip()
 FB_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos"
 
 # ============================
-# كلمات حساسة
+# كلمات حساسة (نفس القائمة السابقة)
 # ============================
 SEPARATORS = ["$", "•", "~", "+", "|", "=", "^", "!", "·", "⁃"]
 
@@ -65,27 +64,35 @@ SENSITIVE_WORDS = [
     "فساد","رشوة","اختلاس","تزوير","تزوير أوراق","غسيل أموال"
 ]
 
-def split_sensitive_word(word):
-    if word not in SENSITIVE_WORDS:
-        return word
-    symbol = random.choice(SEPARATORS)
-    pos = len(word) // 2
-    return word[:pos] + symbol + word[pos:]
+def break_sensitive_inside_word(word):
+    """
+    يكسر أي كلمة حساسة حتى لو كانت ملتصقة
+    مثال: بالتحرش → بالتحر•ش
+    """
+    for sensitive in SENSITIVE_WORDS:
+        if sensitive in word:
+            symbol = random.choice(SEPARATORS)
+            pos = len(sensitive) // 2
+            broken = sensitive[:pos] + symbol + sensitive[pos:]
+            return word.replace(sensitive, broken, 1)
+    return word
+
 
 def process_sensitive_text(text, limit_once=False):
     words = text.split()
     used = False
-    out = []
+    result = []
+
     for w in words:
-        stripped_w = re.sub(r'[^\w]', '', w) 
         has_sensitive = any(s in w for s in SENSITIVE_WORDS)
-        
+
         if has_sensitive and (not used or not limit_once):
-            out.append(split_sensitive_word(w))
+            result.append(break_sensitive_inside_word(w))
             used = True
         else:
-            out.append(w)
-    return " ".join(out)
+            result.append(w)
+
+    return " ".join(result)
 
 # ============================
 # الأماكن والهاشتاجات
@@ -135,28 +142,37 @@ def extract_safe_hashtags(text):
     return " ".join(f"#{t}" for t in tags)
 
 # ============================
-# دالة التفاف النص حسب البكسل
+# (جديد) دالة التفاف النص حسب البكسل
 # ============================
 def wrap_text_pixel_based(text, drawing, canvas, max_width_px):
+    """
+    تقسيم النص إلى أسطر بناءً على العرض الفعلي بالبكسل وليس عدد الحروف
+    """
     words = text.split()
     lines = []
     current_line = []
     
     for word in words:
+        # تجربة إضافة الكلمة للسطر الحالي
         test_line = current_line + [word]
+        
+        # تشكيل النص وقياسه
         test_str = " ".join(test_line)
         reshaped_text = arabic_reshaper.reshape(test_str)
         bidi_text = get_display(reshaped_text)
+        
         metrics = drawing.get_font_metrics(canvas, bidi_text)
         
         if metrics.text_width <= max_width_px:
             current_line = test_line
         else:
+            # السطر اكتمل، احفظ القديم وابدأ سطراً جديداً بالكلمة الحالية
             if current_line:
                 final_str = " ".join(current_line)
                 lines.append(get_display(arabic_reshaper.reshape(final_str)))
             current_line = [word]
             
+    # إضافة السطر الأخير
     if current_line:
         final_str = " ".join(current_line)
         lines.append(get_display(arabic_reshaper.reshape(final_str)))
@@ -164,30 +180,48 @@ def wrap_text_pixel_based(text, drawing, canvas, max_width_px):
     return lines
 
 # ============================
-# دالة ملائمة النص للمربع
+# (جديد) دالة ملائمة النص للمربع
 # ============================
 def fit_text_dynamic(text, canvas):
-    font_size = 60
-    min_font = 20
+    """
+    تحاول هذه الدالة إيجاد أكبر حجم خط ممكن ومسافة بين الأسطر
+    بحيث لا يتجاوز النص الحدود الأفقية والعمودية المحددة.
+    """
+    font_size = 60  # نبدأ بخط كبير
+    min_font = 20   # أقل حجم خط مسموح به
     
+    # نستخدم كائن رسم وهمي للحسابات
     with Drawing() as draw:
         draw.font = FONT_FILE
         
         while font_size >= min_font:
             draw.font_size = font_size
+            
+            # حساب ارتفاع السطر ديناميكياً (مثلاً 1.3 من حجم الخط)
+            # هذا يضمن أنه إذا صغر الخط، تصغر المسافات بين الأسطر أيضاً
             line_height = int(font_size * 1.3)
+            
+            # تقسيم النص بناءً على العرض المتاح (850px)
             lines = wrap_text_pixel_based(text, draw, canvas, MAX_WIDTH)
+            
+            # حساب الارتفاع الكلي للنص الناتج
             total_text_height = len(lines) * line_height
             
+            # التحقق: هل الارتفاع الكلي أقل من المساحة المتاحة (155px)؟
+            # وهل النص ليس فارغاً؟
             if total_text_height <= MAX_HEIGHT and len(lines) > 0:
+                # نجاح: أعد الأسطر، حجم الخط، وارتفاع السطر
                 return lines, font_size, line_height
             
+            # إذا لم ينجح، قلل الخط وجرب مرة أخرى
             font_size -= 2
             
+    # في حالة الفشل التام (نص طويل جداً)، نرجع أصغر خط ونقص النص لاحقاً
+    # (الخوارزمية أعلاه قوية ولن تصل لهنا غالباً إلا في نصوص ضخمة جداً)
     return lines, min_font, int(min_font * 1.3)
 
 # ============================
-# التنفيذ الرئيسي (معدل)
+# التنفيذ الرئيسي
 # ============================
 def main():
     feed = feedparser.parse(RSS_URL)
@@ -210,21 +244,16 @@ def main():
 
         first_50 = " ".join(summary.split()[:50])
 
-        # === 1. تجهيز الكابشن (بدون رابط) ===
         caption = (
+            f"{title}\n\n"
             f"{first_50}...\n\n"
-            f"التفاصيل ورابط الخبر في أول تعليق 👇\n\n"
+            f"تابع الخبر كامل هنا 👇\n{entry.link}\n\n"
             f"{extract_safe_hashtags(raw_title)}"
         )
 
-        # === 2. تجهيز التعليق (الرابط والعنوان) ===
-        comment_text = (
-            f"{title}\n"
-            f"الخبر كامل هنا 👇\n"
-            f"{entry.link}"
-        )
-
         with Image(filename=BG_IMAGE) as canvas:
+            
+            # وضع الصورة المصغرة أو اللوجو
             try:
                 match = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
                 if match:
@@ -240,8 +269,15 @@ def main():
             except:
                 pass
 
+            # --- هنا التغيير الجوهري لرسم النص ---
+            
+            # استدعاء دالة الملائمة الديناميكية
             lines, font_size, line_height = fit_text_dynamic(title, canvas)
+            
+            # حساب نقطة البداية العمودية ليتوسط النص المنطقة المحددة
             total_h = len(lines) * line_height
+            # المعادلة: بداية المنطقة + (ارتفاع المنطقة - ارتفاع النص) / 2
+            # نضيف نصف ارتفاع السطر (line_height / 3 تقريباً) لضبط الـ Baseline للخط العربي
             start_y = TEXT_TOP + (MAX_HEIGHT - total_h) // 2 + int(font_size * 0.8)
 
             with Drawing() as draw:
@@ -250,6 +286,18 @@ def main():
                 draw.fill_color = Color("black")
                 draw.text_alignment = "center"
                 
+                # رسم الأسطر
+                current_y = start_y
+                # تعديل بسيط لأن wand يرسم النص بناءً على الـ baseline وليس الزاوية العليا
+                # الـ loop السابقة كانت تزيد Y، سنستخدم نفس المنطق
+                
+                # إعادة ضبط الـ Y ليكون أول سطر في مكانه الصحيح بالنسبة للـ Baseline
+                # عادة في Wand: Y هو خط الارتكاز. 
+                # لنبدأ من start_y المحسوب ونزيد عليه
+                
+                # تصحيح بسيط للتموضع الرأسي:
+                # start_y المحسوب أعلاه هو قمة الكتلة النصية + الهامش
+                # لكن عند الرسم نحتاج إحداثيات الـ Baseline للسطر الأول
                 current_y = TEXT_TOP + (MAX_HEIGHT - total_h) // 2 + int(line_height * 0.8)
 
                 for line in lines:
@@ -260,10 +308,9 @@ def main():
 
             canvas.save(filename="final.png")
 
-        # === عملية النشر والتعليق ===
+        # النشر على فيسبوك
         try:
             with open("final.png", "rb") as img:
-                # 1. نشر البوست
                 res = requests.post(
                     FB_URL,
                     data={"access_token": PAGE_ACCESS_TOKEN, "caption": caption},
@@ -271,29 +318,6 @@ def main():
                 )
 
             if res.status_code == 200:
-                # 2. جلب ID البوست لنشر التعليق
-                post_data = res.json()
-                # أحياناً يكون المعرف post_id وأحياناً id حسب الرد
-                post_id = post_data.get("post_id") or post_data.get("id")
-                
-                print(f"✅ تم نشر البوست: {post_id}")
-
-                if post_id:
-                    # 3. نشر التعليق
-                    comment_url = f"https://graph.facebook.com/v19.0/{post_id}/comments"
-                    comment_res = requests.post(
-                        comment_url,
-                        data={
-                            "access_token": PAGE_ACCESS_TOKEN,
-                            "message": comment_text
-                        }
-                    )
-                    if comment_res.status_code == 200:
-                        print("💬 تم إضافة التعليق بنجاح")
-                    else:
-                        print(f"⚠️ خطأ في التعليق: {comment_res.text}")
-
-                # حفظ وتحديث Git
                 with open(POSTED_FILE, "a", encoding="utf-8") as f:
                     f.write(h + "\n")
 
@@ -303,11 +327,12 @@ def main():
                 subprocess.run(["git", "commit", "-m", "update posted articles"], check=False)
                 subprocess.run(["git", "push"], check=False)
 
+                print("✅ تم النشر بنجاح")
                 break
             else:
                 print(f"❌ فشل النشر: {res.text}")
         except Exception as e:
-            print(f"❌ خطأ أثناء العملية: {e}")
+            print(f"❌ خطأ أثناء رفع الصورة: {e}")
 
 if __name__ == "__main__":
     main()
