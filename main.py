@@ -183,17 +183,17 @@ def main():
                 except:
                     pass
 
-                # ===== صورة القسم (فوق صورة الخبر) مع شفافية PNG صحيحة =====
+                # ===== صورة القسم (فوق صورة الخبر) مع ظهور الخلفية =====
                 with Image(filename=feed_data["image"]) as overlay:
-                    overlay.alpha_channel = 'activate'   # <<< مهم جداً لظهور الشفافية
-                    overlay.transform(resize="1080x1080^")
-                    overlay.extent(
-                        1080,
-                        1080,
-                        (overlay.width - 1080) // 2,
-                        (overlay.height - 1080) // 2
-                    )
-                    canvas.composite(overlay, 0, 0)
+                    overlay.alpha_channel = 'activate'  # <<< مهم جداً
+                    # نترك Overlay بأبعادها الأصلية أو تصغير بسيط إذا كبير جدًا
+                    overlay_width = min(overlay.width, 400)  # يمكن تعديل حسب التصميم
+                    overlay_height = min(overlay.height, 400)
+                    overlay.transform(resize=f"{overlay_width}x{overlay_height}")
+                    # ضعها في أعلى وسط التصميم
+                    x = (CANVAS_W - overlay_width) // 2
+                    y = 0
+                    canvas.composite(overlay, x, y, operator='over')  # <<< operator over
 
                 # ===== النص =====
                 lines, font_size, line_height = fit_text(title, canvas)
