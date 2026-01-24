@@ -4,6 +4,8 @@ import requests
 import hashlib
 import os
 import re
+import json
+import random
 from datetime import datetime
 
 from wand.image import Image
@@ -12,6 +14,35 @@ from wand.color import Color
 
 import arabic_reshaper
 from bidi.algorithm import get_display
+
+# ============================
+# تحميل الكلمات الحساسة (إضافة)
+# ============================
+with open("sensitive_words.json", "r", encoding="utf-8") as f:
+    SENSITIVE_WORDS = json.load(f)["words"]
+
+IMAGE_SEPARATORS = ["$", "•", "~", "+", "|", "^", "·"]
+CAPTION_SEPARATORS = ["/"]
+
+def split_word(word, separators):
+    sep = random.choice(separators)
+    mid = max(1, len(word) // 2)
+    return word[:mid] + sep + word[mid:]
+
+def process_sensitive_text(text, separators, limit_once=False):
+    used = False
+    for sensitive in sorted(SENSITIVE_WORDS, key=len, reverse=True):
+        pattern = rf'(?<!\w){re.escape(sensitive)}(?!\w)'
+
+        def repl(match):
+            nonlocal used
+            if used and limit_once:
+                return match.group(0)
+            used = True
+            return split_word(match.group(0), separators)
+
+        text = re.sub(pattern, repl, text)
+    return text
 
 # ============================
 # إعدادات روابط التغذية
@@ -173,10 +204,23 @@ def main():
             write_log(f"🆕 خبر جديد | قسم: {feed_data['name']} | عنوان: {title}")
 
             summary = re.sub("<.*?>", "", entry.summary).strip()
-            caption = (
+
+            raw_caption = (
                 f"{title}\n\n"
                 f"{' '.join(summary.split()[:40])}...\n\n"
                 f"{entry.link}"
+            )
+
+            caption = process_sensitive_text(
+                raw_caption,
+                CAPTION_SEPARATORS,
+                limit_once=True
+            )
+
+            safe_title_image = process_sensitive_text(
+                title,
+                IMAGE_SEPARATORS,
+                limit_once=False
             )
 
             with Image(width=CANVAS_W, height=CANVAS_H, background=Color("white")) as canvas:
@@ -201,7 +245,7 @@ def main():
                     overlay.transform(resize="1080x")
                     canvas.composite(overlay, 0, 0, operator='over')
 
-                lines, font_size, line_height = fit_text(title, canvas)
+                lines, font_size, line_height = fit_text(safe_title_image, canvas)
                 start_y = TEXT_TOP + (MAX_HEIGHT - len(lines) * line_height) // 2
 
                 with Drawing() as draw:
