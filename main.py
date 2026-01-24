@@ -4,7 +4,6 @@ import requests
 import hashlib
 import os
 import re
-import random
 import subprocess
 
 from wand.image import Image
@@ -64,29 +63,81 @@ PAGE_ID = os.getenv("PAGE_ID")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
 FB_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos"
 
-# =========================
+# ============================
+# حدود النص
+# ============================
+TEXT_LEFT = 55
+TEXT_RIGHT = 1030
+TEXT_TOP = 765
+TEXT_BOTTOM = 980
+
+CENTER_X = (TEXT_LEFT + TEXT_RIGHT) // 2
+MAX_WIDTH = TEXT_RIGHT - TEXT_LEFT
+MAX_HEIGHT = TEXT_BOTTOM - TEXT_TOP
+
+# ============================
+# الأماكن والهاشتاجات
+# ============================
+PLACES = [
+    "القاهرة","الجيزة","الإسكندرية","الدقهلية","الشرقية","القليوبية",
+    "كفر الشيخ","الغربية","المنوفية","البحيرة","دمياط",
+    "بورسعيد","الإسماعيلية","السويس",
+    "الفيوم","بني سويف","المنيا","أسيوط","سوهاج","قنا","الأقصر","أسوان",
+    "البحر الأحمر","الوادي الجديد","مطروح","شمال سيناء","جنوب سيناء",
+    "مدينة قنا","مركز قنا","نجع حمادي","مركز نجع حمادي",
+    "دشنا","مركز دشنا","قفط","مركز قفط","قوص","مركز قوص",
+    "أبو تشت","مركز أبو تشت","فرشوط","مركز فرشوط",
+    "نقادة","مركز نقادة","الوقف","مركز الوقف"
+]
+
+GOV_ENTITIES = ["النيابة العامة","وزارة الداخلية","وزارة العدل","محكمة","الشرطة","الأجهزة الأمنية"]
+
+SECTIONS = {
+    "قضائي": ["محكمة","النيابة","حكم","قضت"],
+    "أمني": ["القبض","الأمن","الشرطة","تفتيش"],
+    "تعليمي": ["مدرس","طلاب","تعليم","مدرسة"],
+    "رياضي": ["مباراة","لاعب","نادي","بطولة"]
+}
+
+# ============================
 # أدوات مساعدة
-# =========================
-def get_next_feed_index():
-    if not os.path.exists(INDEX_FILE):
-        return 0
-    with open(INDEX_FILE, "r") as f:
-        return int(f.read().strip())
-
-def save_next_feed_index(i):
-    with open(INDEX_FILE, "w") as f:
-        f.write(str(i))
-
+# ============================
 def shape_text(txt):
     return get_display(arabic_reshaper.reshape(txt))
+
+def detect_section(text):
+    for sec, keys in SECTIONS.items():
+        for k in keys:
+            if k in text:
+                return sec
+    return "أخبار"
+
+def normalize_hashtag(text):
+    return text.replace(" ", "_")
+
+def extract_safe_hashtags(text):
+    tags = ["قنا_نيوز_24"]
+    for p in PLACES:
+        if p in text:
+            tags.append(normalize_hashtag(p))
+            break
+    for g in GOV_ENTITIES:
+        if g in text:
+            tags.append(normalize_hashtag(g))
+            break
+    tags.append(normalize_hashtag(detect_section(text)))
+    return " ".join(f"#{t}" for t in tags)
 
 # =========================
 # التنفيذ
 # =========================
 def main():
-    feed_index = get_next_feed_index()
+    feed_index = 0
+    if os.path.exists(INDEX_FILE):
+        feed_index = int(open(INDEX_FILE).read().strip())
+
     feed_cfg = FEEDS[feed_index % len(FEEDS)]
-    save_next_feed_index(feed_index + 1)
+    open(INDEX_FILE, "w").write(str(feed_index + 1))
 
     feed = feedparser.parse(feed_cfg["url"])
 
@@ -100,22 +151,12 @@ def main():
         if h in posted:
             continue
 
-        # =========================
-        # جلب صورة الخبر
-        # =========================
-        img_url = None
         m = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
-        if m:
-            img_url = m.group(1)
-
-        if not img_url:
+        if not m:
             continue
 
-        r = requests.get(img_url, timeout=15)
+        r = requests.get(m.group(1), timeout=15)
 
-        # =========================
-        # إنشاء Canvas
-        # =========================
         with Image(width=1080, height=1080, background=Color("white")) as canvas:
             canvas.alpha_channel = 'activate'
 
@@ -132,9 +173,7 @@ def main():
                 overlay.resize(1080, 1080)
                 canvas.composite(overlay, 0, 0)
 
-            # =========================
             # كتابة العنوان
-            # =========================
             with Drawing() as draw:
                 draw.font = FONT_FILE
                 draw.font_size = 52
@@ -142,26 +181,39 @@ def main():
                 draw.text_alignment = "center"
 
                 shaped = shape_text(title)
-                draw.text(540, 780, shaped)
+                draw.text(CENTER_X, TEXT_TOP + 40, shaped)
                 draw(canvas)
 
             canvas.format = "png"
             canvas.alpha_channel = 'remove'
             canvas.save(filename="final.png")
 
-        # =========================
-        # نشر فيسبوك
-        # =========================
+        # ---------- كابشن فيسبوك (أول 50 كلمة + تابع باقي الخبر + هاشتاجات) ----------
+        clean_summary = re.sub("<.*?>", "", entry.summary)
+        first_50 = " ".join(clean_summary.split()[:50])
+        caption = (
+            f"{title}
+
+"
+            f"{first_50}...
+"
+            f"تابع باقي الخبر من هنا 👇
+"
+            f"{entry.link}
+
+"
+            f"{extract_safe_hashtags(title)}"
+        )
+
         with open("final.png", "rb") as img:
             res = requests.post(
                 FB_URL,
-                data={"access_token": PAGE_ACCESS_TOKEN, "caption": title},
+                data={"access_token": PAGE_ACCESS_TOKEN, "caption": caption},
                 files={"source": img},
             )
 
         if res.status_code == 200:
-            with open(POSTED_FILE, "a", encoding="utf-8") as f:
-                f.write(h + "\n")
+            open(POSTED_FILE, "a", encoding="utf-8").write(h + "\n")
             print("✅ تم النشر")
             break
         else:
