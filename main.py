@@ -183,8 +183,9 @@ def main():
                 except:
                     pass
 
-                # ===== صورة القسم (فوق صورة الخبر) =====
+                # ===== صورة القسم (فوق صورة الخبر) مع شفافية PNG صحيحة =====
                 with Image(filename=feed_data["image"]) as overlay:
+                    overlay.alpha_channel = 'activate'   # <<< مهم جداً لظهور الشفافية
                     overlay.transform(resize="1080x1080^")
                     overlay.extent(
                         1080,
