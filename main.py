@@ -187,8 +187,8 @@ def main():
                 with Image(filename=feed_data["image"]) as overlay:
                     overlay.alpha_channel = 'activate'  # <<< مهم جداً
                     # نترك Overlay بأبعادها الأصلية أو تصغير بسيط إذا كبير جدًا
-                    overlay_width = min(overlay.width, 400)  # يمكن تعديل حسب التصميم
-                    overlay_height = min(overlay.height, 400)
+                    overlay_width = min(overlay.width, 1080)  # يمكن تعديل حسب التصميم
+                    overlay_height = min(overlay.height, 1080)
                     overlay.transform(resize=f"{overlay_width}x{overlay_height}")
                     # ضعها في أعلى وسط التصميم
                     x = (CANVAS_W - overlay_width) // 2
