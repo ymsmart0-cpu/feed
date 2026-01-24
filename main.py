@@ -4,6 +4,7 @@ import requests
 import hashlib
 import os
 import re
+from datetime import datetime
 
 from wand.image import Image
 from wand.drawing import Drawing
@@ -65,10 +66,10 @@ CANVAS_H = 1080
 NEWS_IMG_H = 715
 NEWS_Y = 0
 
-TEXT_LEFT = 80
-TEXT_RIGHT = 1000
-TEXT_TOP = 760
-TEXT_BOTTOM = 1030
+TEXT_LEFT = 55
+TEXT_RIGHT = 1030
+TEXT_TOP = 765
+TEXT_BOTTOM = 980
 
 MAX_WIDTH = TEXT_RIGHT - TEXT_LEFT
 MAX_HEIGHT = TEXT_BOTTOM - TEXT_TOP
@@ -76,6 +77,7 @@ CENTER_X = TEXT_LEFT + MAX_WIDTH // 2
 
 POSTED_FILE = "posted_articles.txt"
 FEED_INDEX_FILE = "last_feed_index.txt"
+LOG_FILE = "publish_log.txt"
 
 PAGE_ID = os.getenv("PAGE_ID", "").strip()
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "").strip()
@@ -96,6 +98,11 @@ def get_next_feed_index():
 def save_next_feed_index(i):
     with open(FEED_INDEX_FILE, "w") as f:
         f.write(str(i))
+
+def write_log(message):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}] {message}\n")
 
 # ============================
 # تنسيق النص العربي
@@ -146,18 +153,26 @@ def main():
         feed_index = (start_index + offset) % feeds_count
         feed_data = FEEDS[feed_index]
 
+        write_log(f"🔎 فحص قسم: {feed_data['name']}")
+
         feed = feedparser.parse(feed_data["url"])
         if not feed.entries:
+            write_log(f"⚠️ لا يوجد أخبار في قسم: {feed_data['name']}")
             continue
 
         for entry in feed.entries:
             title = re.sub("<.*?>", "", entry.title).strip()
             h = hashlib.md5(title.encode("utf-8")).hexdigest()
+
             if h in posted:
+                write_log(
+                    f"⏭️ متخطّي (منشور سابقًا) | قسم: {feed_data['name']} | عنوان: {title}"
+                )
                 continue
 
-            summary = re.sub("<.*?>", "", entry.summary).strip()
+            write_log(f"🆕 خبر جديد | قسم: {feed_data['name']} | عنوان: {title}")
 
+            summary = re.sub("<.*?>", "", entry.summary).strip()
             caption = (
                 f"{title}\n\n"
                 f"{' '.join(summary.split()[:40])}...\n\n"
@@ -166,7 +181,6 @@ def main():
 
             with Image(width=CANVAS_W, height=CANVAS_H, background=Color("white")) as canvas:
 
-                # ===== صورة الخبر (الخلفية) =====
                 try:
                     match = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
                     if match:
@@ -174,8 +188,7 @@ def main():
                         with Image(blob=r.content) as art:
                             art.transform(resize="1080x715^")
                             art.extent(
-                                1080,
-                                715,
+                                1080, 715,
                                 (art.width - 1080) // 2,
                                 (art.height - 715) // 2
                             )
@@ -183,19 +196,11 @@ def main():
                 except:
                     pass
 
-                # ===== صورة القسم (فوق صورة الخبر) مع ظهور الخلفية =====
                 with Image(filename=feed_data["image"]) as overlay:
-                    overlay.alpha_channel = 'activate'  # <<< مهم جداً
-                    # نترك Overlay بأبعادها الأصلية أو تصغير بسيط إذا كبير جدًا
-                    overlay_width = min(overlay.width, 1080)  # يمكن تعديل حسب التصميم
-                    overlay_height = min(overlay.height, 1080)
-                    overlay.transform(resize=f"{overlay_width}x{overlay_height}")
-                    # ضعها في أعلى وسط التصميم
-                    x = (CANVAS_W - overlay_width) // 2
-                    y = 0
-                    canvas.composite(overlay, x, y, operator='over')  # <<< operator over
+                    overlay.alpha_channel = 'activate'
+                    overlay.transform(resize="1080x")
+                    canvas.composite(overlay, 0, 0, operator='over')
 
-                # ===== النص =====
                 lines, font_size, line_height = fit_text(title, canvas)
                 start_y = TEXT_TOP + (MAX_HEIGHT - len(lines) * line_height) // 2
 
@@ -214,11 +219,13 @@ def main():
 
                 canvas.save(filename="final.png")
 
-            # ===== نشر على فيسبوك =====
             with open("final.png", "rb") as img:
                 res = requests.post(
                     FB_URL,
-                    data={"access_token": PAGE_ACCESS_TOKEN, "caption": caption},
+                    data={
+                        "access_token": PAGE_ACCESS_TOKEN,
+                        "caption": caption
+                    },
                     files={"source": img}
                 )
 
@@ -226,10 +233,20 @@ def main():
                 with open(POSTED_FILE, "a", encoding="utf-8") as f:
                     f.write(h + "\n")
 
-                save_next_feed_index((feed_index + 1) % feeds_count)
+                next_index = (feed_index + 1) % feeds_count
+                save_next_feed_index(next_index)
+
+                write_log(
+                    f"✅ تم النشر بنجاح | قسم: {feed_data['name']} | عنوان: {title}"
+                )
                 print("✅ تم النشر بنجاح")
                 return
+            else:
+                write_log(
+                    f"❌ فشل النشر | قسم: {feed_data['name']} | عنوان: {title} | Status: {res.status_code}"
+                )
 
+    write_log("⚠️ لا يوجد أخبار جديدة في أي قسم")
     print("⚠️ لا يوجد أخبار جديدة")
 
 if __name__ == "__main__":
