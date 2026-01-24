@@ -59,16 +59,16 @@ FEEDS = [
 # ============================
 FONT_FILE = "29ltbukrabolditalic.otf"
 
-CANVAS_W = 1200   # <<< تعديل
-CANVAS_H = 1500   # <<< تعديل
+CANVAS_W = 1080
+CANVAS_H = 1080
 
-NEWS_IMG_H = 800  # <<< تعديل (ارتفاع مناسب)
+NEWS_IMG_H = 715
 NEWS_Y = 0
 
-TEXT_LEFT = 100   # <<< تعديل
-TEXT_RIGHT = 1100 # <<< تعديل
-TEXT_TOP = 900    # <<< تعديل
-TEXT_BOTTOM = 1450# <<< تعديل
+TEXT_LEFT = 80
+TEXT_RIGHT = 1000
+TEXT_TOP = 760
+TEXT_BOTTOM = 1030
 
 MAX_WIDTH = TEXT_RIGHT - TEXT_LEFT
 MAX_HEIGHT = TEXT_BOTTOM - TEXT_TOP
@@ -119,8 +119,8 @@ def wrap_text(text, draw, canvas):
     return lines
 
 def fit_text(text, canvas):
-    size = 64  # <<< تعديل بسيط يتناسب مع المقاس الجديد
-    while size >= 26:
+    size = 60
+    while size >= 24:
         with Drawing() as d:
             d.font = FONT_FILE
             d.font_size = size
@@ -128,7 +128,7 @@ def fit_text(text, canvas):
             if len(lines) * size * 1.3 <= MAX_HEIGHT:
                 return lines, size, int(size * 1.3)
         size -= 2
-    return lines, 26, int(26 * 1.3)
+    return lines, 24, int(24 * 1.3)
 
 # ============================
 # التنفيذ الرئيسي
@@ -172,12 +172,12 @@ def main():
                     if match:
                         r = requests.get(match.group(1), timeout=10)
                         with Image(blob=r.content) as art:
-                            art.transform(resize="1200x800^")
+                            art.transform(resize="1080x715^")
                             art.extent(
-                                1200,
-                                800,
-                                (art.width - 1200) // 2,
-                                (art.height - 800) // 2
+                                1080,
+                                715,
+                                (art.width - 1080) // 2,
+                                (art.height - 715) // 2
                             )
                             canvas.composite(art, 0, NEWS_Y)
                 except:
@@ -185,12 +185,12 @@ def main():
 
                 # ===== صورة القسم (فوق صورة الخبر) =====
                 with Image(filename=feed_data["image"]) as overlay:
-                    overlay.transform(resize="1200x1500^")
+                    overlay.transform(resize="1080x1080^")
                     overlay.extent(
-                        1200,
-                        1500,
-                        (overlay.width - 1200) // 2,
-                        (overlay.height - 1500) // 2
+                        1080,
+                        1080,
+                        (overlay.width - 1080) // 2,
+                        (overlay.height - 1080) // 2
                     )
                     canvas.composite(overlay, 0, 0)
 
