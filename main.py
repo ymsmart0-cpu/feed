@@ -191,6 +191,15 @@ def main():
         # ---------- كابشن فيسبوك (أول 50 كلمة + تابع باقي الخبر + هاشتاجات) ----------
         clean_summary = re.sub("<.*?>", "", entry.summary)
         first_50 = " ".join(clean_summary.split()[:50])
+
+        caption = (
+            f"{title}\n\n"
+            f"{first_50}...\n"
+            "تابع باقي الخبر من هنا 👇\n"
+            f"{entry.link}\n\n"
+            f"{extract_safe_hashtags(title)}"
+        )
+        first_50 = " ".join(clean_summary.split()[:50])
         caption = (
             f"{title}
 
