@@ -208,7 +208,6 @@ def main():
             raw_caption = (
                 f"{title}\n\n"
                 f"{' '.join(summary.split()[:40])}...\n\n"
-                f"{entry.link}"
             )
 
             caption = process_sensitive_text(
@@ -216,6 +215,7 @@ def main():
                 CAPTION_SEPARATORS,
                 limit_once=True
             )
+            caption += "\n\n👇 تابع كامل الخبر من هنا\n" + entry.link
 
             safe_title_image = process_sensitive_text(
                 title,
