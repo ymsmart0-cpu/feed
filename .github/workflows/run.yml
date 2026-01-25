@@ -2,11 +2,13 @@ name: News Bot Wand Engine Pro
 
 permissions:
   contents: write
+  actions: write
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # كل 30 دقيقة (UTC)
-  workflow_dispatch:
+    # تم تغيير الدقائق إلى 12 و 42 لتجنب وقت الذروة في سيرفرات GitHub لضمان تشغيل أسرع
+    - cron: "12,42 * * * *"
+  workflow_dispatch: # يتيح لك التشغيل اليدوي في أي وقت
 
 jobs:
   run-bot:
@@ -15,6 +17,9 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          # لضمان وجود صلاحيات كافية لعمل Push لاحقاً
+          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,11 +45,18 @@ jobs:
 
       - name: Commit and Push bot state
         run: |
-          git config user.name "GitHub Action Bot"
-          git config user.email "actions@github.com"
+          # إعداد هوية البوت الرسمية لـ GitHub لضمان قبول الـ Push التلقائي
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # إضافة الملفات الناتجة عن البوت
           git add posted_articles.txt last_feed_index.txt publish_log.txt final.png || true
 
-          git diff --cached --quiet || git commit -m "🤖 Bot state update"
-
-          git push
+          # فحص التغييرات: إذا لم يوجد جديد لن يقوم بعمل Commit (لتجنب الأخطاء)
+          if git diff --cached --quiet; then
+            echo "No changes to commit. Skipping push."
+          else
+            # إضافة [skip ci] تمنع دخول البوت في حلقة تشغيل مفرغة
+            git commit -m "🤖 Bot state update [skip ci]"
+            git push
+          fi
