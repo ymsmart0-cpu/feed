@@ -215,7 +215,7 @@ def main():
                 CAPTION_SEPARATORS,
                 limit_once=True
             )
-            caption += "\n\n👇 تابع كامل الخبر من هنا\n" + entry.link
+            caption += "\n\n👇 تابع كامل الخبر من هنا 👇\n" + entry.link
 
             safe_title_image = process_sensitive_text(
                 title,
