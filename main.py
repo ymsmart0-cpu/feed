@@ -263,14 +263,13 @@ def main():
 
                 canvas.save(filename="final.png")
 
-            with open("final.png", "rb") as img:
 with open("final.png", "rb") as img:
     res = requests.post(
         FB_URL,
         data={
             "access_token": PAGE_ACCESS_TOKEN,
-            "message": caption,      # 👈 مهم
-            "published": "true"      # 👈 مهم
+            "message": caption,      # نص المنشور
+            "published": "true"      # نشر فعلي
         },
         files={"source": img}
     )
