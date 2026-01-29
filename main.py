@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+
 import feedparser
 import requests
 import hashlib
@@ -24,10 +25,12 @@ with open("sensitive_words.json", "r", encoding="utf-8") as f:
 IMAGE_SEPARATORS = ["$", "•", "~", "+", "|", "^", "·"]
 CAPTION_SEPARATORS = ["/"]
 
+
 def split_word(word, separators):
     sep = random.choice(separators)
     mid = max(1, len(word) // 2)
     return word[:mid] + sep + word[mid:]
+
 
 def process_sensitive_text(text, separators, limit_once=False):
     used = False
@@ -44,16 +47,47 @@ def process_sensitive_text(text, separators, limit_once=False):
         text = re.sub(pattern, repl, text)
     return text
 
+
 # ============================
-# إعدادات التغذية
+# إعدادات RSS
 # ============================
 FEEDS = [
-    {"name": "اخبار قنا", "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/اخبار%20قنا?alt=rss", "image": "qena.png", "text_color": "white"},
-    {"name": "حوادث", "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/حوادث?alt=rss", "image": "news.png", "text_color": "white"},
-    {"name": "برلمان 25", "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/برلمان%2025?alt=rss", "image": "barlman.png", "text_color": "white"},
-    {"name": "رياضة", "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/رياضة?alt=rss", "image": "sport.png", "text_color": "black"},
-    {"name": "علوم وتكنولوجيا", "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/علوم%20وتكنولوجيا?alt=rss", "image": "tecno.png", "text_color": "black"},
-    {"name": "صحة وفن", "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/صحة%20وفن?alt=rss", "image": "art.png", "text_color": "black"}
+    {
+        "name": "اخبار قنا",
+        "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/اخبار%20قنا?alt=rss",
+        "image": "qena.png",
+        "text_color": "white",
+    },
+    {
+        "name": "حوادث",
+        "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/حوادث?alt=rss",
+        "image": "news.png",
+        "text_color": "white",
+    },
+    {
+        "name": "برلمان 25",
+        "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/برلمان%2025?alt=rss",
+        "image": "barlman.png",
+        "text_color": "white",
+    },
+    {
+        "name": "رياضة",
+        "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/رياضة?alt=rss",
+        "image": "sport.png",
+        "text_color": "black",
+    },
+    {
+        "name": "علوم وتكنولوجيا",
+        "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/علوم%20وتكنولوجيا?alt=rss",
+        "image": "tecno.png",
+        "text_color": "black",
+    },
+    {
+        "name": "صحة وفن",
+        "url": "https://qenanews-24.blogspot.com/feeds/posts/default/-/صحة%20وفن?alt=rss",
+        "image": "art.png",
+        "text_color": "black",
+    },
 ]
 
 # ============================
@@ -63,6 +97,9 @@ FONT_FILE = "29ltbukrabolditalic.otf"
 
 CANVAS_W = 1080
 CANVAS_H = 1080
+
+NEWS_IMG_H = 715
+NEWS_Y = 0
 
 TEXT_LEFT = 55
 TEXT_RIGHT = 1030
@@ -81,30 +118,38 @@ PAGE_ID = os.getenv("PAGE_ID", "").strip()
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "").strip()
 FB_URL = f"https://graph.facebook.com/v19.0/{PAGE_ID}/photos"
 
+
 # ============================
 # أدوات مساعدة
 # ============================
 def get_next_feed_index():
+    if not os.path.exists(FEED_INDEX_FILE):
+        return 0
     try:
         with open(FEED_INDEX_FILE, "r") as f:
             return int(f.read().strip())
     except:
         return 0
 
+
 def save_next_feed_index(i):
     with open(FEED_INDEX_FILE, "w") as f:
         f.write(str(i))
 
-def write_log(msg):
+
+def write_log(message):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(f"[{datetime.now()}] {msg}\n")
+        f.write(f"[{timestamp}] {message}\n")
+
 
 # ============================
-# تنسيق النص
+# تنسيق النص العربي
 # ============================
 def wrap_text(text, draw, canvas):
     words = text.split()
-    lines, current = [], []
+    lines = []
+    current = []
 
     for word in words:
         test = current + [word]
@@ -117,7 +162,9 @@ def wrap_text(text, draw, canvas):
 
     if current:
         lines.append(get_display(arabic_reshaper.reshape(" ".join(current))))
+
     return lines
+
 
 def fit_text(text, canvas):
     size = 60
@@ -131,6 +178,7 @@ def fit_text(text, canvas):
         size -= 2
     return lines, 24, int(24 * 1.3)
 
+
 # ============================
 # التنفيذ الرئيسي
 # ============================
@@ -141,10 +189,13 @@ def main():
             posted = f.read().splitlines()
 
     start_index = get_next_feed_index()
+    feeds_count = len(FEEDS)
 
-    for offset in range(len(FEEDS)):
-        feed_index = (start_index + offset) % len(FEEDS)
+    for offset in range(feeds_count):
+        feed_index = (start_index + offset) % feeds_count
         feed_data = FEEDS[feed_index]
+
+        write_log(f"🔎 فحص قسم: {feed_data['name']}")
 
         feed = feedparser.parse(feed_data["url"])
         if not feed.entries:
@@ -162,68 +213,74 @@ def main():
             caption = process_sensitive_text(
                 f"{title}\n\n{' '.join(summary.split()[:40])}...\n\n",
                 CAPTION_SEPARATORS,
-                True
+                limit_once=True,
             )
-            caption += "\n👇 تابع الخبر 👇\n" + entry.link
+            caption += "\n\n👇 تابع كامل الخبر من هنا 👇\n" + entry.link
 
-            safe_title = process_sensitive_text(title, IMAGE_SEPARATORS)
+            safe_title_image = process_sensitive_text(
+                title, IMAGE_SEPARATORS, limit_once=False
+            )
 
             with Image(width=CANVAS_W, height=CANVAS_H, background=Color("white")) as canvas:
-
-                match = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
-                if match:
-                    try:
+                try:
+                    match = re.search(r'<img[^>]+src="([^">]+)"', entry.summary)
+                    if match:
                         r = requests.get(match.group(1), timeout=10)
                         with Image(blob=r.content) as art:
                             art.transform(resize="1080x715^")
-                            art.extent(1080, 715)
-                            canvas.composite(art, 0, 0)
-                    except:
-                        pass
+                            art.extent(
+                                1080,
+                                715,
+                                (art.width - 1080) // 2,
+                                (art.height - 715) // 2,
+                            )
+                            canvas.composite(art, 0, NEWS_Y)
+                except:
+                    pass
 
                 with Image(filename=feed_data["image"]) as overlay:
+                    overlay.alpha_channel = "activate"
                     overlay.transform(resize="1080x")
                     canvas.composite(overlay, 0, 0)
 
-                lines, font_size, line_height = fit_text(safe_title, canvas)
-                y = TEXT_TOP
+                lines, font_size, line_height = fit_text(safe_title_image, canvas)
+                start_y = TEXT_TOP + (MAX_HEIGHT - len(lines) * line_height) // 2
 
-                with Drawing() as d:
-                    d.font = FONT_FILE
-                    d.font_size = font_size
-                    d.fill_color = Color(feed_data["text_color"])
-                    d.text_alignment = "center"
+                with Drawing() as draw:
+                    draw.font = FONT_FILE
+                    draw.font_size = font_size
+                    draw.fill_color = Color(feed_data["text_color"])
+                    draw.text_alignment = "center"
 
+                    y = start_y + int(font_size * 0.8)
                     for line in lines:
-                        d.text(CENTER_X, y, line)
+                        draw.text(CENTER_X, y, line)
                         y += line_height
 
-                    d(canvas)
+                    draw(canvas)
 
                 canvas.save(filename="final.png")
 
-            # === نشر الصورة كمنشور حقيقي ===
             with open("final.png", "rb") as img:
                 res = requests.post(
                     FB_URL,
                     data={
                         "access_token": PAGE_ACCESS_TOKEN,
-                        "message": caption,
-                        "published": "true"
+                        "caption": caption,
                     },
-                    files={"source": img}
+                    files={"source": img},
                 )
 
             if res.status_code == 200:
                 with open(POSTED_FILE, "a", encoding="utf-8") as f:
                     f.write(h + "\n")
-                save_next_feed_index(feed_index + 1)
-                write_log(f"تم النشر: {title}")
+
+                save_next_feed_index((feed_index + 1) % feeds_count)
                 print("✅ تم النشر بنجاح")
                 return
 
     print("⚠️ لا يوجد أخبار جديدة")
 
-# ============================
+
 if __name__ == "__main__":
     main()
