@@ -264,14 +264,16 @@ def main():
                 canvas.save(filename="final.png")
 
             with open("final.png", "rb") as img:
-                res = requests.post(
-                    FB_URL,
-                    data={
-                        "access_token": PAGE_ACCESS_TOKEN,
-                        "caption": caption
-                    },
-                    files={"source": img}
-                )
+res = requests.post(
+    FB_URL,
+    data={
+        "access_token": PAGE_ACCESS_TOKEN,
+        "message": caption,      # 👈 بدل caption
+        "published": "true"      # 👈 مهم جدًا
+    },
+    files={"source": img}
+)
+
 
             if res.status_code == 200:
                 with open(POSTED_FILE, "a", encoding="utf-8") as f:
